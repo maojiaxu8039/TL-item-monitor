@@ -26,6 +26,7 @@ a = Analysis(
         ('index.html', '.'),
         ('import_template.csv', '.'),
         ('config.yaml', '.'),
+        ('logo.png', '.'),
     ],
     hiddenimports=[
         'scraper', 'yaml', 'urllib3', 'idna',
