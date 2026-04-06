@@ -11,6 +11,14 @@ import os
 import sys
 import csv
 import threading
+import logging
+try:
+    from notifier import show_notification
+except ImportError:
+    show_notification = None
+    logger = logging.getLogger(__name__)
+    logger.warning("notifier 模块未安装，系统通知将不可用")
+
 import time
 import logging
 import urllib.parse
@@ -117,6 +125,7 @@ class State:
         self.fire_price_mode: str = "专家"
         self.last_fire_scrape: str = ""  # 上次抓取时间
         self.items_data: list = []  # 物品列表
+        self.notified_ids: set = set()  # 已通知过的物品ID
         self.items_file_path: str = ""  # 当前JSON路径
         self.last_items_reload: str = ""  # 上次重载时间
         self.scrape_timer: threading.Timer = None
@@ -156,6 +165,60 @@ _scrape_semaphore = threading.Semaphore(1)
 
 
 # ========== 火价抓取（后台线程）==========
+def _do_worth_check():
+    """检查值得关注的物品并发送通知"""
+    if show_notification is None:
+        return
+    import math
+    with _state.lock:
+        items = list(_state.items_data)
+        notified = set(_state.notified_ids)
+    notified_new = set()
+    for section in items:
+        sec_damage = section.get("damage")
+        if sec_damage is None:
+            continue
+        R = 122 * math.pow(sec_damage, -0.577)
+        for item in section.get("items", []):
+            item_id = item.get("id", "")
+            if item_id in notified:
+                continue
+            price = item.get("price", 0)
+            more = item.get("more", 0) or 0
+            if not price:
+                continue
+            actual = more / price * 100
+            if actual >= R:
+                notified_new.add(item_id)
+                name = item.get("name", "?")
+                item_type = item.get("type", "")
+                fire = actual
+                try:
+                    from notifier import show_notification
+                    show_notification(
+                        title=f"🔥 好物: {name}",
+                        message=f"{item_type} | 性价比: {fire:.2f}% (阈值{R:.2f}%)",
+                        duration="long"
+                    )
+                except Exception as e:
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"通知失败: {e}")
+    if notified_new:
+        with _state.lock:
+            _state.notified_ids.update(notified_new)
+
+def _schedule_worth_check(interval=30):
+    """定时执行 worth 检查"""
+    def _run():
+        _do_worth_check()
+        with _state.lock:
+            if _state.reload_timer:
+                _state.reload_timer.cancel()
+            _state.reload_timer = threading.Timer(interval, _run)
+            _state.reload_timer.daemon = True
+            _state.reload_timer.start()
+    _run()
+
 def _do_fire_scrape():
     """执行一次火价抓取"""
     try:
