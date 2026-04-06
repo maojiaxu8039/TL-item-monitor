@@ -1,6 +1,7 @@
 name: Build Windows EXE
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -39,17 +40,12 @@ src = os.path.dirname(playwright.__file__)
 dst = 'dist/TL_monitor/_internal/playwright'
 os.makedirs(dst, exist_ok=True)
 for item in os.listdir(src):
-    src_path = os.path.join(src, item)
-    dst_path = os.path.join(dst, item)
-    if os.path.isdir(src_path):
-        if os.path.islink(src_path):
-            shutil.copytree(os.readlink(src_path), dst_path, dirs_exist_ok=True)
-        else:
-            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+    sp = os.path.join(src, item)
+    dp = os.path.join(dst, item)
+    if os.path.isdir(sp):
+        shutil.copytree(sp, dp, dirs_exist_ok=True)
     else:
-        shutil.copy2(src_path, dst_path)
-print('Copied playwright package to', dst)
-print('Driver contents:', os.listdir(os.path.join(dst, 'driver')) if os.path.exists(os.path.join(dst, 'driver')) else 'no driver dir')
+        shutil.copy2(sp, dp)
 "
 
       - name: Upload artifact
