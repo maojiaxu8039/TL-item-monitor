@@ -11,22 +11,26 @@ def _get_notifier():
         return _notifier
 
     system = platform.system()
+    import sys as _sys
+    _sys_platform = getattr(_sys, 'sys_platform', _sys.platform)
+    import logging as _logging
+    _logging.getLogger(__name__).info(f"检测平台: platform.system()={repr(system)}, sys.platform={repr(_sys_platform)}")
 
-    if system == "Windows":
+    if system == "Windows" or _sys_platform == "win32":
         try:
             from winotify import Notification, NotifierRegistry
             _notifier = "winotify"
             return _notifier
-        except ImportError:
-            pass
+        except Exception as e:
+            _logging.getLogger(__name__).warning(f"winotify 加载失败: {type(e).__name__}: {e}")
 
     elif system == "Darwin":  # macOS
         try:
             import pync
             _notifier = "pync"
             return _notifier
-        except ImportError:
-            pass
+        except Exception as e:
+            _logging.getLogger(__name__).warning(f"winotify 加载失败: {type(e).__name__}: {e}")
 
     _notifier = "none"
     return _notifier
