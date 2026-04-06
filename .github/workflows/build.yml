@@ -17,7 +17,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install --upgrade pyinstaller playwright pyyaml numpy pillow
+        run: pip install --upgrade pyinstaller playwright pyyaml numpy pillow && playwright install chromium --with-deps
 
       - name: Build with PyInstaller
         run: pyinstaller TL_monitor.spec --clean -y
