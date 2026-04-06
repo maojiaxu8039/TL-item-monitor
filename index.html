@@ -806,7 +806,9 @@ function checkWorthNotifications(){
       new Notification('好物: '+item.name,{
         body:(_typeEmoji(item.type)+' '+item.type+' | 火价: '+item.fire),
         silent:false
-      })
+      });
+      // 同时调用服务端 API 触发原生系统通知（Win/macOS）
+      fetch('/api/notify?title='+encodeURIComponent('好物: '+item.name)+'&message='+encodeURIComponent(_typeEmoji(item.type)+' '+item.type+' | 火价: '+item.fire)).catch(function(){});
     },idx*800);
   });
 }

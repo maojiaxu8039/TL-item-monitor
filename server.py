@@ -126,6 +126,7 @@ class State:
         self.last_fire_scrape: str = ""  # 上次抓取时间
         self.items_data: list = []  # 物品列表
         self.notified_ids: set = set()  # 已通知过的物品ID
+        self.prev_fire_price: float = 0.0  # 上次火价
         self.items_file_path: str = ""  # 当前JSON路径
         self.last_items_reload: str = ""  # 上次重载时间
         self.scrape_timer: threading.Timer = None
@@ -166,46 +167,29 @@ _scrape_semaphore = threading.Semaphore(1)
 
 # ========== 火价抓取（后台线程）==========
 def _do_worth_check():
-    """检查值得关注的物品并发送通知"""
+    """服务端 worth 检查：监控火价异常波动并发送通知"""
     if show_notification is None:
         return
-    import math
     with _state.lock:
-        items = list(_state.items_data)
+        fp = _state.fire_price
+        rec = dict(_state.fire_price_record)
         notified = set(_state.notified_ids)
-    notified_new = set()
-    for section in items:
-        sec_damage = section.get("damage")
-        if sec_damage is None:
-            continue
-        R = 122 * math.pow(sec_damage, -0.577)
-        for item in section.get("items", []):
-            item_id = item.get("id", "")
-            if item_id in notified:
-                continue
-            price = item.get("price", 0)
-            more = item.get("more", 0) or 0
-            if not price:
-                continue
-            actual = more / price * 100
-            if actual >= R:
-                notified_new.add(item_id)
-                name = item.get("name", "?")
-                item_type = item.get("type", "")
-                fire = actual
-                try:
-                    from notifier import show_notification
-                    show_notification(
-                        title=f"🔥 好物: {name}",
-                        message=f"{item_type} | 性价比: {fire:.2f}% (阈值{R:.2f}%)",
-                        duration="long"
-                    )
-                except Exception as e:
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"通知失败: {e}")
-    if notified_new:
-        with _state.lock:
-            _state.notified_ids.update(notified_new)
+    # 通知标记：火价变化超过 10% 时提醒
+    prev_fp = _state.prev_fire_price
+    if prev_fp and fp:
+        change = abs(fp - prev_fp) / prev_fp * 100
+        if change >= 10:
+            direction = "↑" if fp > prev_fp else "↓"
+            try:
+                show_notification(
+                    title=f"火价变动 {direction}",
+                    message=f"当前: {fp:.4f} 元/万火，较上次{change:.1f}%",
+                    duration="short"
+                )
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.warning(f"通知失败: {e}")
+    _state.prev_fire_price = fp
 
 def _schedule_worth_check(interval=30):
     """定时执行 worth 检查"""
@@ -324,6 +308,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "fire_per_rmb": rec.get("fire_per_rmb", 0),
                 "volume": rec.get("trading_volume", ""),
             })
+            return
+
+        if path == "/api/notify":
+            # 浏览器调用此接口发送原生系统通知（Win/macOS）
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+            title = params.get("title", ["TL Monitor"])[0]
+            message = params.get("message", [""])[0]
+            if show_notification:
+                try:
+                    show_notification(title=title, message=message, duration="long")
+                    self.send_json({"ok": True})
+                except Exception as e:
+                    self.send_json({"ok": False, "error": str(e)})
+            else:
+                self.send_json({"ok": False, "error": "notifier unavailable"})
             return
 
         if path == "/api/items":
