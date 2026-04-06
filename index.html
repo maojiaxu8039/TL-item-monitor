@@ -818,7 +818,7 @@ function checkWorthNotifications(){
       });
       // 同时调用服务端 API 触发原生系统通知（Win/macOS）
       var msg='物品名称：'+item.name+'\n火价：'+item.fire+'\n百火/伤害：'+item.fireDmg+'\n更新时间：'+item.last_time;
-      fetch('/api/notify?title='+encodeURIComponent('火炬超值')+'&message='+encodeURIComponent(msg)+'&icon=logo.png').catch(function(){});
+      fetch('/api/notify?title='+encodeURIComponent('火炬超值')+'&message='+encodeURIComponent(msg)+'&icon=logo.ico').catch(function(){});
     },idx*800);
   });
 }

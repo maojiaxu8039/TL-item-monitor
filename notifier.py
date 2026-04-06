@@ -53,16 +53,17 @@ def show_notification(title: str, message: str, duration: str = "long", app_id: 
         toast.show()
 
     elif ntype == "pync":
-        import pync
-        pync.Notifier.remove(title)  # 移除同名旧通知
-        kwargs = {
-            "message": message,
-            "title": title,
-            "contentImage": icon,  # macOS 支持通知图标
-            "sound": True,
-            "wait": False
-        }
-        pync.Notifier.notify(**kwargs)
+        import pync, subprocess, os
+        # 用 subprocess 直接调用 terminal-notifier，支持自定义标题
+        tn_path = pync.Notifier.bin_path
+        if isinstance(tn_path, bytes):
+            tn_path = tn_path.decode()
+        cmd = [tn_path, '-title', title, '-message', message]
+        # 图标支持：terminal-notifier 的 -appIcon 需要 URL 或本地文件用 file:// 协议
+        if icon and os.path.exists(icon):
+            icon_abs = os.path.abspath(icon)
+            cmd += ['-appIcon', f'file://{icon_abs}']
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
 
     else:
         # 回退：打印到日志
