@@ -40,16 +40,17 @@ def show_notification(title: str, message: str, duration: str = "long", app_id: 
     ntype = _get_notifier()
 
     if ntype == "winotify":
+        import os
         from winotify import Notification
-        kwargs = {
-            "app_id": app_id,
-            "title": title,
-            "msg": message,
-            "duration": duration  # "long"=10秒, "short"=5秒
-        }
-        if icon:
-            kwargs["icon"] = icon
-        toast = Notification(**kwargs)
+        # Windows icon 必须是绝对路径
+        icon_abs = os.path.abspath(icon) if icon else None
+        toast = Notification(
+            app_id=app_id,
+            title=title,
+            msg=message,
+            duration=duration,  # "long"(10秒) / "short"(5秒) / 整数(毫秒)
+            icon=icon_abs
+        )
         toast.show()
 
     elif ntype == "pync":
@@ -59,10 +60,11 @@ def show_notification(title: str, message: str, duration: str = "long", app_id: 
         if isinstance(tn_path, bytes):
             tn_path = tn_path.decode()
         cmd = [tn_path, '-title', title, '-message', message]
-        # 图标支持：terminal-notifier 的 -appIcon 需要 URL 或本地文件用 file:// 协议
-        if icon and os.path.exists(icon):
+        # 图标：terminal-notifier 支持 file:// 绝对路径
+        if icon:
             icon_abs = os.path.abspath(icon)
-            cmd += ['-appIcon', f'file://{icon_abs}']
+            if os.path.exists(icon_abs):
+                cmd += ['-appIcon', f'file://{icon_abs}']
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
 
     else:
