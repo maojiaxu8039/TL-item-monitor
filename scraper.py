@@ -137,8 +137,9 @@ def fetch_fire_price(mode: str = "赛季普通") -> Optional[dict]:
     try:
         browser = _get_browser()
         page = browser.new_page()
-        page.goto(url, wait_until="networkidle", timeout=30000)
-        page.wait_for_timeout(2000)
+        page.goto(url, wait_until="load", timeout=30000)
+        page.wait_for_selector("body", timeout=15000)
+        page.wait_for_timeout(3000)
         content = page.content()
         page.close()
     except Exception as e:
