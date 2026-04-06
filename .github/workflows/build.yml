@@ -31,9 +31,26 @@ jobs:
           New-Item -ItemType Directory -Path $dst -Force | Out-Null
           Copy-Item -Path "$src\*" -Destination $dst -Recurse -Force
 
-      - name: Bundle playwright Python package
+      - name: Bundle playwright Python package (including driver)
         run: |
-          python -c "import playwright, os, shutil; src=os.path.dirname(playwright.__file__); dst='dist/TL_monitor/_internal/playwright'; os.makedirs(dst,exist_ok=True); [shutil.copytree(os.path.join(src,f),os.path.join(dst,f),dirs_exist_ok=True) if os.path.isdir(os.path.join(src,f)) else shutil.copy2(os.path.join(src,f),os.path.join(dst,f)) for f in os.listdir(src)]"
+          python -c "
+import playwright, os, shutil
+src = os.path.dirname(playwright.__file__)
+dst = 'dist/TL_monitor/_internal/playwright'
+os.makedirs(dst, exist_ok=True)
+for item in os.listdir(src):
+    src_path = os.path.join(src, item)
+    dst_path = os.path.join(dst, item)
+    if os.path.isdir(src_path):
+        if os.path.islink(src_path):
+            shutil.copytree(os.readlink(src_path), dst_path, dirs_exist_ok=True)
+        else:
+            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+    else:
+        shutil.copy2(src_path, dst_path)
+print('Copied playwright package to', dst)
+print('Driver contents:', os.listdir(os.path.join(dst, 'driver')) if os.path.exists(os.path.join(dst, 'driver')) else 'no driver dir')
+"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
