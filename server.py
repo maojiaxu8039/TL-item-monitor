@@ -182,16 +182,18 @@ def _do_worth_check():
             direction = "↑" if fp > prev_fp else "↓"
             try:
                 show_notification(
-                    title=f"火价变动 {direction}",
-                    message=f"当前: {fp:.4f} 元/万火，较上次{change:.1f}%",
-                    duration="short"
+                    title="火价变动",
+                    message=f"当前: {fp:.4f} 元/万火，较上次 {direction}{change:.1f}%
+火价模式: {_state.fire_price_mode}",
+                    duration=20000,
+                    icon=str(BASE_DIR / "logo.ico")
                 )
             except Exception as e:
                 logger = logging.getLogger(__name__)
                 logger.warning(f"通知失败: {e}")
     _state.prev_fire_price = fp
 
-def _schedule_worth_check(interval=30):
+def _schedule_worth_check(interval=3600):
     """定时执行 worth 检查"""
     def _run():
         _do_worth_check()
@@ -279,6 +281,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def do_GET(self):
+        logger = logging.getLogger(__name__)
+        logger.info(f"[do_GET] self.path={repr(self.path)}")
         u = urllib.parse.urlparse(self.path)
         path = u.path
         query = u.query
@@ -312,13 +316,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/notify":
             # 浏览器调用此接口发送原生系统通知（Win/macOS）
-            params = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+            logger = logging.getLogger(__name__)
+            logger.info(f"[notify] path={repr(path)}, query={repr(query)}")
+            params = urllib.parse.parse_qs(query)
+            logger.info(f"[notify] params={params}")
             title = params.get("title", ["TL Monitor"])[0]
             message = params.get("message", [""])[0]
             icon_path = params.get("icon", [None])[0] or None
             # 将相对路径转为绝对路径
             if icon_path:
                 icon_path = str(BASE_DIR / icon_path.lstrip('/'))
+                logger.info(f"[notify] icon resolved to: {icon_path}, exists={os.path.exists(icon_path)}")
             if show_notification:
                 try:
                     show_notification(title=title, message=message, duration="long", icon=icon_path)
