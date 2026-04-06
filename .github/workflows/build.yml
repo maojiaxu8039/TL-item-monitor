@@ -23,12 +23,10 @@ jobs:
         run: pyinstaller TL_monitor.spec --clean -y
 
       - name: Bundle playwright Python package
-        run: |
-          python -c "import playwright, os, shutil; src = os.path.dirname(playwright.__file__); dst = 'dist/TL_monitor/_internal/playwright'; os.makedirs(dst, exist_ok=True); [shutil.copytree(os.path.join(src, i), os.path.join(dst, i), dirs_exist_ok=True) if os.path.isdir(os.path.join(src, i)) else shutil.copy2(os.path.join(src, i), os.path.join(dst, i)) for i in os.listdir(src)]"
+        run: python -c "import playwright, os, shutil; src = os.path.dirname(playwright.__file__); dst = 'dist/TL_monitor/_internal/playwright'; os.makedirs(dst, exist_ok=True); [shutil.copytree(os.path.join(src, i), os.path.join(dst, i), dirs_exist_ok=True) if os.path.isdir(os.path.join(src, i)) else shutil.copy2(os.path.join(src, i), os.path.join(dst, i)) for i in os.listdir(src)]"
 
-      - name: Install and bundle Chromium
-        run: |
-          python -c "import os, subprocess, sys; browsers_root = os.path.abspath('dist/TL_monitor/_internal/playwright/driver/package/.local-browsers'); os.makedirs(browsers_root, exist_ok=True); env = dict(os.environ); env['PLAYWRIGHT_BROWSERS_PATH'] = browsers_root; r = subprocess.run([sys.executable, '-m', 'playwright', 'install', 'chromium'], env=env, capture_output=True, text=True); print(r.stdout[-1000:] if r.stdout else ''); print(r.stderr[-500:] if r.stderr else '')"
+      - name: Copy Chromium to bundle location
+        run: python -c "import os, shutil; la = os.environ.get('LOCALAPPDATA'); sb = os.path.join(la, 'ms-playwright'); db = os.path.abspath('dist/TL_monitor/_internal/playwright/driver/package/.local-browsers'); os.makedirs(db, exist_ok=True); [shutil.copytree(os.path.join(sb, n), os.path.join(db, n)) for n in ['chromium_headless_shell-1208', 'chromium-1208'] if os.path.exists(os.path.join(sb, n)) and not os.path.exists(os.path.join(db, n))]; [print(os.path.join(r, f)) for r, d, fs in os.walk(db) for f in fs if f.endswith('.exe')]"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
