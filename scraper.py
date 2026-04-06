@@ -38,79 +38,26 @@ _context = None
 def _get_browser():
     """获取或创建持久化 Chromium 实例（线程安全）"""
     global _browser, _browser_init_ts, _playwright, _context
+    # 打包后告诉 Playwright 去哪里找浏览器
+    meipass = getattr(sys, 'frozen', False) and getattr(sys, '_MEIPASS', None)
+    if meipass:
+        browsers_root = os.path.join(meipass, 'playwright', 'driver', 'package', '.local-browsers')
+        if os.path.exists(browsers_root):
+            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browsers_root
+            logger.info(f"PLAYWRIGHT_BROWSERS_PATH={browsers_root}")
     with _browser_lock:
         now = time.time()
         if _browser is None or (now - _browser_init_ts) > BROWSER_TTL:
             if _browser is not None:
-                try:
-                    _browser.close()
-                except Exception:
-                    pass
+                try: _browser.close()
+                except Exception: pass
                 _browser = None
-                _context = None
-            if _playwright is None:
-                _playwright = sync_playwright().__enter__()
-                logger.info("Playwright 启动成功")
-            logger.info("启动持久化 Chromium...")
-
-            # 打包后的 exe 场景：从 exe 同目录找 playwright_browsers
-            base_dir = getattr(sys, '_MEIPASS', str(Path(__file__).parent))
-            browser_path_hint = None
-            bundled = os.path.join(base_dir, 'playwright_browsers')
-            if os.path.exists(bundled):
-                # 查找浏览器子目录
-                for sub in os.listdir(bundled):
-                    if not sub.startswith('chromium-') and not sub.startswith('chromium_headless_shell-'):
-                        continue
-                    # Linux
-                    chromium_sub = os.path.join(bundled, sub, 'chrome-linux', 'chromium')
-                    if os.path.exists(chromium_sub):
-                        browser_path_hint = chromium_sub
-                        break
-                    # macOS full
-                    chromium_mac = os.path.join(bundled, sub, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium')
-                    if os.path.exists(chromium_mac):
-                        browser_path_hint = chromium_mac
-                        break
-                    # macOS headless shell
-                    chromium_hs_mac = os.path.join(bundled, sub, 'chrome-headless-shell-mac-arm64', 'Chrome Headless Shell.app', 'Contents', 'MacOS', 'Chrome Headless Shell')
-                    if os.path.exists(chromium_hs_mac):
-                        browser_path_hint = chromium_hs_mac
-                        break
-                    # Linux headless shell
-                    chromium_hs_linux = os.path.join(bundled, sub, 'chrome-headless-shell-linux', 'chrome-headless-shell')
-                    if os.path.exists(chromium_hs_linux):
-                        browser_path_hint = chromium_hs_linux
-                        break
-                    chromium_hs_win = os.path.join(bundled, sub, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe')
-                    if os.path.exists(chromium_hs_win):
-                        browser_path_hint = chromium_hs_win
-                        break
-
-            launch_opts = {"headless": True}
-            if browser_path_hint:
-                launch_opts["executable_path"] = browser_path_hint
-                logger.info(f"使用打包的 Chromium: {browser_path_hint}")
-
-            _browser = _playwright.chromium.launch(**launch_opts)
+            _playwright = sync_playwright().__enter__()
+            logger.info("Playwright 启动成功")
+            _browser = _playwright.chromium.launch(headless=True)
             _browser_init_ts = now
-            _context = None
             logger.info("Chromium 启动成功（将复用5分钟）")
         return _browser
-
-
-def _get_context():
-    """获取或创建持久化 browser context（带 cookie 缓存）"""
-    global _context
-    if _context is None:
-        browser = _get_browser()
-        _context = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            locale="zh-CN",
-        )
-        logger.info("Browser context 已创建（cookie 将被缓存）")
-    return _context
-
 
 def _close_browser():
     """手动关闭浏览器（服务器退出时调用）"""
