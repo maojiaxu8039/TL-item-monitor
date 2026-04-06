@@ -19,8 +19,6 @@ jobs:
       - name: Install dependencies
         run: pip install --upgrade pyinstaller playwright pyyaml numpy pillow && playwright install chromium --with-deps
 
-      - name: Bundle playwright Python package
-        run: python -c "import playwright, os, shutil; src = os.path.dirname(playwright.__file__); dst = 'dist/TL_monitor/_internal/playwright'; os.makedirs(dst, exist_ok=True); [shutil.copytree(os.path.join(src, i), os.path.join(dst, i), dirs_exist_ok=True) if os.path.isdir(os.path.join(src, i)) else shutil.copy2(os.path.join(src, i), os.path.join(dst, i)) for i in os.listdir(src)]"
 
       - name: Build with PyInstaller
         run: pyinstaller TL_monitor.spec --clean -y
