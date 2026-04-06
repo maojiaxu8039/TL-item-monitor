@@ -797,18 +797,28 @@ function checkWorthNotifications(){
       var R=122*Math.pow(sec.damage,-0.577);
       if(actual>=R){
         NOTIFIED_IDS.push(item.id);
-        pending.push({name:item.name,type:item.type||'',fire:fmtFire(calcItemFire(item))});
+        var fireVal = calcItemFire(item);
+        var fireDmg = p > 0 ? ((item.more||0)/p*100).toFixed(2) : '0.00';
+        var updateTime = item.last_time ? new Date(item.last_time*1000).toLocaleString('zh-CN') : '无';
+        pending.push({
+          name: item.name,
+          type: item.type||'',
+          fire: fmtFire(fireVal),
+          fireDmg: fireDmg,
+          last_time: updateTime
+        });
       }
     });
   });
   pending.forEach(function(item,idx){
     setTimeout(function(){
-      new Notification('好物: '+item.name,{
-        body:(_typeEmoji(item.type)+' '+item.type+' | 火价: '+item.fire),
+      new Notification('火炬超值: '+item.name,{
+        body:'物品名称：'+item.name+'\n火价：'+item.fire+'\n百火/伤害：'+item.fireDmg+'\n更新时间：'+item.last_time,
         silent:false
       });
       // 同时调用服务端 API 触发原生系统通知（Win/macOS）
-      fetch('/api/notify?title='+encodeURIComponent('好物: '+item.name)+'&message='+encodeURIComponent(_typeEmoji(item.type)+' '+item.type+' | 火价: '+item.fire)).catch(function(){});
+      var msg='物品名称：'+item.name+'\n火价：'+item.fire+'\n百火/伤害：'+item.fireDmg+'\n更新时间：'+item.last_time;
+      fetch('/api/notify?title='+encodeURIComponent('火炬超值')+'&message='+encodeURIComponent(msg)+'&icon=logo.png').catch(function(){});
     },idx*800);
   });
 }

@@ -32,30 +32,37 @@ def _get_notifier():
     return _notifier
 
 
-def show_notification(title: str, message: str, duration: str = "long", app_id: str = "TL Monitor"):
-    """显示原生通知（跨平台）"""
+def show_notification(title: str, message: str, duration: str = "long", app_id: str = "TL Monitor", icon: str = None):
+    """显示原生通知（跨平台）
+    
+    icon: 可选图标路径（Windows支持，macOS用contentImage参数）
+    """
     ntype = _get_notifier()
 
     if ntype == "winotify":
         from winotify import Notification
-        toast = Notification(
-            app_id=app_id,
-            title=title,
-            msg=message,
-            duration=duration  # "long"=10秒, "short"=5秒
-        )
+        kwargs = {
+            "app_id": app_id,
+            "title": title,
+            "msg": message,
+            "duration": duration  # "long"=10秒, "short"=5秒
+        }
+        if icon:
+            kwargs["icon"] = icon
+        toast = Notification(**kwargs)
         toast.show()
 
     elif ntype == "pync":
         import pync
         pync.Notifier.remove(title)  # 移除同名旧通知
-        pync.Notifier.notify(
-            message,
-            title=title,
-            contentImage=None,
-            sound=True,
-            wait=False
-        )
+        kwargs = {
+            "message": message,
+            "title": title,
+            "contentImage": icon,  # macOS 支持通知图标
+            "sound": True,
+            "wait": False
+        }
+        pync.Notifier.notify(**kwargs)
 
     else:
         # 回退：打印到日志

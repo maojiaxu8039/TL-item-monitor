@@ -315,9 +315,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             params = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
             title = params.get("title", ["TL Monitor"])[0]
             message = params.get("message", [""])[0]
+            icon_path = params.get("icon", [None])[0] or None
+            # 将相对路径转为绝对路径
+            if icon_path:
+                icon_path = str(BASE_DIR / icon_path.lstrip('/'))
             if show_notification:
                 try:
-                    show_notification(title=title, message=message, duration="long")
+                    show_notification(title=title, message=message, duration="long", icon=icon_path)
                     self.send_json({"ok": True})
                 except Exception as e:
                     self.send_json({"ok": False, "error": str(e)})
