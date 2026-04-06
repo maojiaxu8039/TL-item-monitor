@@ -32,7 +32,7 @@ def _get_notifier():
     return _notifier
 
 
-def show_notification(title: str, message: str, duration: str = "long", app_id: str = "TL Monitor", icon: str = None):
+def show_notification(title: str, message: str, duration: int = 20000, app_id: str = "TL Monitor", icon: str = None):
     """显示原生通知（跨平台）
     
     icon: 可选图标路径（Windows支持，macOS用contentImage参数）
@@ -48,7 +48,7 @@ def show_notification(title: str, message: str, duration: str = "long", app_id: 
             app_id=app_id,
             title=title,
             msg=message,
-            duration=duration,  # "long"(10秒) / "short"(5秒) / 整数(毫秒)
+            duration=duration,  # 毫秒整数，20000=20秒
             icon=icon_abs
         )
         toast.show()
