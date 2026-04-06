@@ -17,7 +17,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install --upgrade pyinstaller playwright pyyaml numpy pillow winotify && playwright install chromium --with-deps
+        run: pip install --upgrade pyinstaller playwright pyyaml numpy pillow winotify pywin32 && playwright install chromium --with-deps
+
+      - name: Post-install pywin32
+        run: python Scripts/pywin32_postinstall.py -install 2>&1 || (echo "pywin32 postinstall skipped" && exit 0)
 
       - name: Build with PyInstaller
         run: pyinstaller TL_monitor.spec --clean -y
