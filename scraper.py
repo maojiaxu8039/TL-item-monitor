@@ -35,36 +35,59 @@ _playwright = None
 _context = None
 
 
-def _get_browser():
-    """获取或创建持久化 Chromium 实例（线程安全）"""
-    global _browser, _browser_init_ts, _playwright, _context
+def _find_chromium():
+    """尝试找到 chromium 可执行文件路径（优先打包的，其次系统 playwright 的）"""
     meipass = getattr(sys, 'frozen', False) and getattr(sys, '_MEIPASS', None)
-    chromium_exe = None
     if meipass:
-        # 打包后的 exe：先查找 zip 并解压，再找 chromium
         base_dir = os.path.join(meipass, '_internal')
         chromium_dir = os.path.join(base_dir, 'chromium_headless_shell-1208')
         zip_path = os.path.join(base_dir, 'chromium_headless_shell.zip')
+        # 尝试解压
         if not os.path.exists(chromium_dir) and os.path.exists(zip_path):
             import zipfile
             logger.info(f"解压 Chromium: {zip_path}")
             with zipfile.ZipFile(zip_path, 'r') as zf:
                 zf.extractall(base_dir)
-            logger.info(f"解压完成: {chromium_dir}")
+            logger.info(f"解压完成")
+        # 在解压目录中找 chromium
         if os.path.exists(chromium_dir):
             for root, dirs, files in os.walk(chromium_dir):
                 for f in files:
                     if f == 'chrome-headless-shell.exe':
-                        candidate = os.path.join(root, f)
-                        if os.path.exists(candidate):
-                            chromium_exe = candidate
-                            break
-                if chromium_exe:
-                    break
-        if chromium_exe:
-            logger.info(f"使用打包的 Chromium: {chromium_exe}")
-        else:
-            logger.warning(f"未找到打包的 Chromium，解压后也未找到")
+                        return os.path.join(root, f)
+    # 回退到系统 playwright 的 chromium
+    try:
+        from playwright._impl._driver import get_driver_env
+        import subprocess, sys as _sys
+        env = dict(get_driver_env())
+        # 让 playwright 找系统 chromium
+        result = subprocess.run(
+            [_sys.executable, '-m', 'playwright', 'install', '--dry-run', 'chromium'],
+            capture_output=True, text=True, env={**os.environ, **env}
+        )
+        # playwright 默认浏览器路径
+        pf = os.environ.get('PROGRAMFILES', 'C:\\Program Files')
+        pf86 = os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)')
+        localapp = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+        candidates = [
+            os.path.join(localapp, 'ms-playwright', 'chromium_headless_shell-1208', 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'),
+            os.path.join(localapp, 'ms-playwright', 'chromium-1208', 'chrome-win64', 'chrome.exe'),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                logger.info(f"使用系统 Chromium: {c}")
+                return c
+    except Exception as e:
+        logger.warning(f"查找系统 Chromium 失败: {e}")
+    logger.warning("未找到任何 Chromium")
+    return None
+
+def _get_browser():
+    """获取或创建持久化 Chromium 实例（线程安全）"""
+    global _browser, _browser_init_ts, _playwright, _context
+    chromium_exe = _find_chromium()
+    if chromium_exe:
+        logger.info(f"将使用 Chromium: {chromium_exe}")
     with _browser_lock:
         now = time.time()
         if _browser is None or (now - _browser_init_ts) > BROWSER_TTL:
