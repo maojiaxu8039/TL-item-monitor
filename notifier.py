@@ -5,7 +5,6 @@ import platform
 import os
 import logging
 import subprocess
-import ctypes
 
 _notifier = None
 
@@ -17,25 +16,40 @@ def _get_notifier():
 
     system = platform.system()
     _sys_platform = getattr(sys, 'sys_platform', sys.platform)
-    logger = logging.getLogger(__name__)
-    logger.info(f"检测平台: platform.system()={repr(system)}, sys.platform={repr(_sys_platform)}")
+    logging.getLogger(__name__).info(f"检测平台: platform.system()={repr(system)}, sys.platform={repr(_sys_platform)}")
 
+    # Windows：优先 PowerShell（.NET Forms NotifyIcon），其次 winotify
     if system == "Windows" or _sys_platform == "win32":
-        _notifier = "powershell"
-        logger.info("通知方式: PowerShell")
-        return _notifier
+        try:
+            subprocess.run(
+                ['powershell', '-Command', 'exit 0'],
+                capture_output=True, timeout=5
+            )
+            _notifier = "powershell"
+            logging.getLogger(__name__).info("使用 PowerShell 通知")
+            return _notifier
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"PowerShell 不可用: {e}")
+
+        try:
+            from winotify import Notification, NotifierRegistry
+            _notifier = "winotify"
+            logging.getLogger(__name__).info("使用 winotify 通知")
+            return _notifier
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"winotify 加载失败: {type(e).__name__}: {e}")
 
     elif system == "Darwin":
         try:
             import pync
             _notifier = "pync"
-            logger.info("通知方式: pync")
+            logging.getLogger(__name__).info("使用 pync 通知")
             return _notifier
         except Exception as e:
-            logger.warning(f"pync 加载失败: {e}")
+            logging.getLogger(__name__).warning(f"pync 加载失败: {type(e).__name__}: {e}")
 
     _notifier = "none"
-    logger.warning("未找到可用通知方式")
+    logging.getLogger(__name__).warning("未找到可用通知方式")
     return _notifier
 
 
@@ -59,7 +73,7 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
     logger = logging.getLogger(__name__)
 
     if ntype == "powershell":
-        # 直接调用 PowerShell，无任何 Python 包依赖
+        # 使用 .NET Forms NotifyIcon（兼容所有 Windows 版本，不依赖 WinRT/COM）
         msg_short = message.replace('\n', ' | ')[:200]
         ps = (
             f'Add-Type -AssemblyName System.Windows.Forms; '
@@ -71,17 +85,33 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
             f'$ni.Dispose()'
         )
         try:
-            r = subprocess.run(
+            result = subprocess.run(
                 ['powershell', '-WindowStyle', 'Hidden', '-NoProfile', '-Command', ps],
                 capture_output=True, timeout=15
             )
-            if r.returncode == 0:
-                logger.info(f"通知成功: {title}")
+            if result.returncode == 0:
+                logger.info(f"PowerShell 通知成功: {title}")
             else:
-                stderr = r.stderr.decode(errors='ignore').strip()
-                logger.warning(f"PowerShell 通知失败: {stderr[:80] if stderr else 'exit ' + str(r.returncode)}")
+                stderr = result.stderr.decode(errors='ignore').strip()
+                logger.warning(f"PowerShell 通知失败: {stderr[:100] if stderr else 'unknown'}")
         except Exception as e:
             logger.warning(f"PowerShell 通知异常: {e}")
+        return
+
+    elif ntype == "winotify":
+        from winotify import Notification
+        toast = Notification(
+            app_id=app_id,
+            title=title,
+            msg=message,
+            duration=duration,
+            icon=icon_abs
+        )
+        try:
+            toast.show()
+            logger.info(f"winotify 通知成功: {title}")
+        except Exception as e:
+            logger.warning(f"winotify.show() 失败: {e}")
         return
 
     elif ntype == "pync":
