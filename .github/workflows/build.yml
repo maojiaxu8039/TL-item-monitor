@@ -27,7 +27,7 @@ jobs:
       - name: Bundle Chromium
         run: |
           New-Item -ItemType Directory -Path "dist/TL_monitor/_internal/playwright/driver/package/.local-browsers/chromium_headless_shell-1208/chrome-headless-shell-win64" -Force | Out-Null
-          Copy-Item -Path (JoinPath $env:LOCALAPPDATA "ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-win64/*") -Destination "dist/TL_monitor/_internal/playwright/driver/package/.local-browsers/chromium_headless_shell-1208/chrome-headless-shell-win64/" -Recurse -Force
+          Copy-Item -Path ($env:LOCALAPPDATA + "\ms-playwright\chromium_headless_shell-1208\chrome-headless-shell-win64\*") -Destination "dist/TL_monitor/_internal/playwright/driver/package/.local-browsers/chromium_headless_shell-1208/chrome-headless-shell-win64/" -Recurse -Force
 
       - name: Bundle playwright Python package
         run: python -c "import playwright, os, shutil; src = os.path.dirname(playwright.__file__); dst = 'dist/TL_monitor/_internal/playwright'; os.makedirs(dst, exist_ok=True); [shutil.copytree(os.path.join(src, i), os.path.join(dst, i), dirs_exist_ok=True) if os.path.isdir(os.path.join(src, i)) else shutil.copy2(os.path.join(src, i), os.path.join(dst, i)) for i in os.listdir(src)]"
