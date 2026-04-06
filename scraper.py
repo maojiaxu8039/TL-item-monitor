@@ -23,7 +23,7 @@ _context = None
 _browser_lock = threading.Lock()
 _scrape_count = 0
 
-BROWSER_TTL = 300  # 5分钟复用
+BROWSER_TTL = 1800  # 30分钟复用，减少重启
 
 
 def _find_chromium():
