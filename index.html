@@ -304,6 +304,23 @@ var RMB=function(fire){return fire*STATE.firePrice/10000};
 var fmtRmb=function(v){return "¥"+FS(v,2)};
 var fmtFire=function(v){return FS(v,1)+"火"};
 var fmtT=function(ts){return ts?new Date(ts*1000).toLocaleString("zh-CN"):"—"};
+function renderSearchResults(){}
+function loadMoreSearchResults(){
+  var results=STATE.searchResults||[];
+  var visible=STATE.searchVisibleCount||15;
+  visible+=15;
+  STATE.searchVisibleCount=visible;
+  var shown=results.slice(0,visible);
+  var dd=document.getElementById("searchDropdown");
+  var html=shown.map(function(item){
+    var id=escAttr(item.item_id||item.物品ID||item.name);
+    return"<div class=\"search-result-item\" data-item-id=\""+id+"\" onclick=\"selectItem(this.dataset.itemId)\"><div><div class=\"sri-name\">"+escHtml(item.name)+"</div><div class=\"sri-meta\"><span class=\"sri-type\">"+escHtml(item.type||"")+"</span></div></div><div style=\"display:flex;align-items:center;gap:10px;\"><span class=\"sri-price\">"+fmtFire(item.price||0)+"</span></div></div>"
+  }).join("");
+  if(results.length>visible){
+    html+="<div class=\"search-more\" onclick=\"loadMoreSearchResults()\">还有 "+(results.length-visible)+" 个结果，点击加载更多</div>";
+  }
+  dd.innerHTML=html;
+}
 async function init(){
   loadSections();
   try{await loadConfig()}catch(e){}
@@ -522,7 +539,6 @@ function doSearch(){
   });
   STATE.searchResults=results.slice(0,200); // 最多保留200条
   STATE.searchVisibleCount=15; // 初始显示15条
-  renderSearchResults();
   dd.classList.add("show");
   STATE.selectedItem=null;
 
