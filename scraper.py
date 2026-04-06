@@ -43,7 +43,7 @@ def _find_chromium():
     chromium_dir = os.path.join(internal_dir, 'chromium_headless_shell-1208')
     zip_path = os.path.join(internal_dir, 'chromium_headless_shell.zip')
 
-    logger.info(f"查找 Chromium：lb_dir={lb_dir}")
+    logger.info(f"查找 Chromium：chromium_dir={chromium_dir}")
 
     # 尝试解压 zip
     if not os.path.exists(chromium_dir):
@@ -58,8 +58,8 @@ def _find_chromium():
             logger.warning(f"chromium zip 不存在: {zip_path}")
 
     # 在解压目录中找 chromium
-    if os.path.exists(lb_dir):
-        for root, dirs, files in os.walk(lb_dir):
+    if os.path.exists(chromium_dir):
+        for root, dirs, files in os.walk(chromium_dir):
             for f in files:
                 if f == 'chrome-headless-shell.exe':
                     found = os.path.join(root, f)
