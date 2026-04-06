@@ -345,6 +345,8 @@ async function init(){
   }
   // 每30秒检测一次评估=good的物品
   setInterval(checkWorthNotifications,30000);
+  // 每5分钟自动刷新火价（与服务器 scrape_interval 对齐）
+  setInterval(fetchFirePrice, 300000);
 }
 
 
