@@ -4,7 +4,6 @@ import sys
 import platform
 import os
 import logging
-import subprocess
 
 _notifier = None
 
@@ -16,40 +15,40 @@ def _get_notifier():
 
     system = platform.system()
     _sys_platform = getattr(sys, 'sys_platform', sys.platform)
-    logging.getLogger(__name__).info(f"检测平台: platform.system()={repr(system)}, sys.platform={repr(_sys_platform)}")
+    logger = logging.getLogger(__name__)
+    logger.info(f"检测平台: platform.system()={repr(system)}, sys.platform={repr(_sys_platform)}")
 
-    # Windows：优先 PowerShell（.NET Forms NotifyIcon），其次 winotify
     if system == "Windows" or _sys_platform == "win32":
         try:
-            subprocess.run(
-                ['powershell', '-Command', 'exit 0'],
-                capture_output=True, timeout=5
-            )
-            _notifier = "powershell"
-            logging.getLogger(__name__).info("使用 PowerShell 通知")
-            return _notifier
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"PowerShell 不可用: {e}")
-
-        try:
-            from winotify import Notification, NotifierRegistry
+            from winotify import Notification
             _notifier = "winotify"
-            logging.getLogger(__name__).info("使用 winotify 通知")
+            logger.info("通知方式: winotify")
             return _notifier
         except Exception as e:
-            logging.getLogger(__name__).warning(f"winotify 加载失败: {type(e).__name__}: {e}")
+            logger.warning(f"winotify 不可用: {type(e).__name__}: {e}")
+
+        # # PowerShell 备用方案（暂时注释）
+        # try:
+        #     import subprocess
+        #     r = subprocess.run(['powershell', '-Command', 'exit 0'], capture_output=True, timeout=5)
+        #     if r.returncode == 0:
+        #         _notifier = "powershell"
+        #         logger.info("通知方式: PowerShell")
+        #         return _notifier
+        # except Exception as e:
+        #     logger.warning(f"PowerShell 不可用: {e}")
 
     elif system == "Darwin":
         try:
             import pync
             _notifier = "pync"
-            logging.getLogger(__name__).info("使用 pync 通知")
+            logger.info("通知方式: pync")
             return _notifier
         except Exception as e:
-            logging.getLogger(__name__).warning(f"pync 加载失败: {type(e).__name__}: {e}")
+            logger.warning(f"pync 加载失败: {e}")
 
     _notifier = "none"
-    logging.getLogger(__name__).warning("未找到可用通知方式")
+    logger.warning("未找到可用通知方式")
     return _notifier
 
 
@@ -72,33 +71,7 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
     icon_abs = _resolve_icon(icon)
     logger = logging.getLogger(__name__)
 
-    if ntype == "powershell":
-        # 使用 .NET Forms NotifyIcon（兼容所有 Windows 版本，不依赖 WinRT/COM）
-        msg_short = message.replace('\n', ' | ')[:200]
-        ps = (
-            f'Add-Type -AssemblyName System.Windows.Forms; '
-            f'$ni = New-Object System.Windows.Forms.NotifyIcon; '
-            f'$ni.Icon = [System.Drawing.SystemIcons]::Information; '
-            f'$ni.Visible = $true; '
-            f'$ni.ShowBalloonTip(5000, "{title}", "{msg_short}", "Info"); '
-            f'Start-Sleep -Seconds 6; '
-            f'$ni.Dispose()'
-        )
-        try:
-            result = subprocess.run(
-                ['powershell', '-WindowStyle', 'Hidden', '-NoProfile', '-Command', ps],
-                capture_output=True, timeout=15
-            )
-            if result.returncode == 0:
-                logger.info(f"PowerShell 通知成功: {title}")
-            else:
-                stderr = result.stderr.decode(errors='ignore').strip()
-                logger.warning(f"PowerShell 通知失败: {stderr[:100] if stderr else 'unknown'}")
-        except Exception as e:
-            logger.warning(f"PowerShell 通知异常: {e}")
-        return
-
-    elif ntype == "winotify":
+    if ntype == "winotify":
         from winotify import Notification
         toast = Notification(
             app_id=app_id,
@@ -116,6 +89,7 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
 
     elif ntype == "pync":
         import pync as _pync
+        import subprocess
         tn_path = _pync.Notifier.bin_path
         if isinstance(tn_path, bytes):
             tn_path = tn_path.decode()
