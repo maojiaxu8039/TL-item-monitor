@@ -16,6 +16,11 @@ a = Analysis(
     ],
     hiddenimports=[
         'winotify',
+        'win32api',
+        'win32gui',
+        'win32con',
+        'win32gui_struct',
+        'win32typing',
         'playwright',
         'playwright.sync_api',
         'playwright.async_api',
