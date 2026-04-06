@@ -63,7 +63,7 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
         toast.show()
 
     elif ntype == "pync":
-        import pync, subprocess, os
+        import pync, subprocess, os, sys
         # 用 subprocess 直接调用 terminal-notifier，支持自定义标题
         tn_path = pync.Notifier.bin_path
         if isinstance(tn_path, bytes):
