@@ -43,6 +43,10 @@ def _find_chromium():
 
     # 在目录中找 chrome-headless-shell.exe
     if os.path.exists(chromium_dir):
+        # 关键：设置 PLAYWRIGHT_BROWSERS_PATH，让 playwright 的 browser_executable_path()
+        # 能找到我们打包的 chromium
+        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = base_dir
+        logger.info(f"PLAYWRIGHT_BROWSERS_PATH set to: {base_dir}")
         for root, dirs, files in os.walk(chromium_dir):
             for f in files:
                 if f == 'chrome-headless-shell.exe':
