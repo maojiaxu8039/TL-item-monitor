@@ -82,6 +82,10 @@ def _get_browser():
                     if os.path.exists(chromium_hs_linux):
                         browser_path_hint = chromium_hs_linux
                         break
+                    chromium_hs_win = os.path.join(bundled, sub, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe')
+                    if os.path.exists(chromium_hs_win):
+                        browser_path_hint = chromium_hs_win
+                        break
 
             launch_opts = {"headless": True}
             if browser_path_hint:
