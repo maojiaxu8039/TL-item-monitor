@@ -17,12 +17,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller playwright pyyaml numpy pillow
+          pip install --upgrade pyinstaller playwright pyyaml numpy pillow
           playwright install chromium --with-deps
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller --collect-all playwright TL_monitor.spec --clean -y
+          pyinstaller TL_monitor.spec --clean -y
+
+      - name: Bundle playwright Python package
+        run: |
+          python -c "import playwright, os, shutil; src=os.path.dirname(playwright.__file__); dst='dist/TL_monitor/_internal/playwright'; os.makedirs(dst,exist_ok=True); [shutil.copytree(os.path.join(src,f),os.path.join(dst,f),dirs_exist_ok=True) if os.path.isdir(os.path.join(src,f)) else shutil.copy2(os.path.join(src,f),os.path.join(dst,f)) for f in os.listdir(src) if f!='driver']"
 
       - name: Bundle Chromium
         run: |
