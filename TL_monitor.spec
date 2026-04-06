@@ -15,6 +15,7 @@ a = Analysis(
         ('scraper.py', '.'),
     ],
     hiddenimports=[
+        'winotify',
         'playwright',
         'playwright.sync_api',
         'playwright.async_api',
