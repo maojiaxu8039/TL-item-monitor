@@ -41,22 +41,30 @@ def _get_browser():
     meipass = getattr(sys, 'frozen', False) and getattr(sys, '_MEIPASS', None)
     chromium_exe = None
     if meipass:
-        # 打包后的 exe：从 playwright/driver/package/.local-browsers/ 下找 chromium
-        root = os.path.join(meipass, 'playwright', 'driver', 'package', '.local-browsers')
-        if os.path.exists(root):
-            for sub in os.listdir(root):
-                candidate = os.path.join(root, sub, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe')
-                if os.path.exists(candidate):
-                    chromium_exe = candidate
-                    break
-                candidate2 = os.path.join(root, sub, 'chromium_headless_shell-1208', 'chrome-headless-shell-win64', 'chrome-headless-shell.exe')
-                if os.path.exists(candidate2):
-                    chromium_exe = candidate2
+        # 打包后的 exe：先查找 zip 并解压，再找 chromium
+        base_dir = os.path.join(meipass, '_internal')
+        chromium_dir = os.path.join(base_dir, 'chromium_headless_shell-1208')
+        zip_path = os.path.join(base_dir, 'chromium_headless_shell.zip')
+        if not os.path.exists(chromium_dir) and os.path.exists(zip_path):
+            import zipfile
+            logger.info(f"解压 Chromium: {zip_path}")
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(base_dir)
+            logger.info(f"解压完成: {chromium_dir}")
+        if os.path.exists(chromium_dir):
+            for root, dirs, files in os.walk(chromium_dir):
+                for f in files:
+                    if f == 'chrome-headless-shell.exe':
+                        candidate = os.path.join(root, f)
+                        if os.path.exists(candidate):
+                            chromium_exe = candidate
+                            break
+                if chromium_exe:
                     break
         if chromium_exe:
             logger.info(f"使用打包的 Chromium: {chromium_exe}")
         else:
-            logger.warning(f"未找到打包的 Chromium，root={root}, list={os.listdir(root) if os.path.exists(root) else 'not exists'}")
+            logger.warning(f"未找到打包的 Chromium，解压后也未找到")
     with _browser_lock:
         now = time.time()
         if _browser is None or (now - _browser_init_ts) > BROWSER_TTL:

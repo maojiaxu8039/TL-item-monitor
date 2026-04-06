@@ -25,8 +25,8 @@ jobs:
       - name: Bundle playwright Python package
         run: python -c "import playwright, os, shutil; src = os.path.dirname(playwright.__file__); dst = 'dist/TL_monitor/_internal/playwright'; os.makedirs(dst, exist_ok=True); [shutil.copytree(os.path.join(src, i), os.path.join(dst, i), dirs_exist_ok=True) if os.path.isdir(os.path.join(src, i)) else shutil.copy2(os.path.join(src, i), os.path.join(dst, i)) for i in os.listdir(src)]"
 
-      - name: Copy Chromium to bundle location
-        run: python -c "import os, shutil; la = os.environ.get('LOCALAPPDATA'); sb = os.path.join(la, 'ms-playwright'); db = os.path.abspath('dist/TL_monitor/_internal/playwright/driver/package/.local-browsers'); os.makedirs(db, exist_ok=True); [shutil.copytree(os.path.join(sb, n), os.path.join(db, n)) for n in ['chromium_headless_shell-1208', 'chromium-1208'] if os.path.exists(os.path.join(sb, n)) and not os.path.exists(os.path.join(db, n))]; [print(os.path.join(r, f)) for r, d, fs in os.walk(db) for f in fs if f.endswith('.exe')]"
+      - name: Package Chromium as zip
+        run: python -c "import os, shutil, zipfile; la = os.environ.get('LOCALAPPDATA'); src = os.path.join(la, 'ms-playwright', 'chromium_headless_shell-1208'); zip_path = 'dist/TL_monitor/_internal/chromium_headless_shell.zip'; dirs = [(src, src, [])]; items = [(src, 'chrome-headless-shell-win64', [])]; dirs.extend(items); zf = zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9); [zf.write(os.path.join(root, f), os.path.relpath(os.path.join(root, f), src)) for root, dirs, files in os.walk(src) for f in files]; zf.close(); print('Zip size:', os.path.getsize(zip_path), 'bytes')"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
