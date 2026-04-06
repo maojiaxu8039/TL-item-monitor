@@ -36,26 +36,29 @@ _context = None
 
 
 def _find_chromium():
-    """尝试找到 chromium 可执行文件路径（优先打包的 zip，其次系统 playwright 的）"""
-    # 用 sys.executable（exe 文件路径）来定位 _internal 目录
+    """尝试找到 chromium 可执行文件路径"""
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-    base_dir = os.path.join(exe_dir, '_internal')
-    chromium_dir = os.path.join(base_dir, 'chromium_headless_shell-1208')
-    zip_path = os.path.join(base_dir, 'chromium_headless_shell.zip')
+    # playwright 驱动只在 .local-browsers 目录下找浏览器
+    lb_dir = os.path.join(exe_dir, '_internal', 'playwright', 'driver', 'package', '.local-browsers')
+    zip_path = os.path.join(lb_dir, 'chromium_headless_shell.zip')
 
-    logger.info(f"查找 Chromium：base_dir={base_dir}, exe_dir={exe_dir}")
+    logger.info(f"查找 Chromium：lb_dir={lb_dir}")
 
-    # 尝试解压 zip
-    if not os.path.exists(chromium_dir) and os.path.exists(zip_path):
-        import zipfile
-        logger.info(f"解压 Chromium zip: {zip_path}")
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            zf.extractall(base_dir)
-        logger.info(f"解压完成")
+    # 尝试解压 zip 到 .local-browsers
+    if not os.path.exists(lb_dir) or not any(os.listdir(lb_dir)):
+        if os.path.exists(zip_path):
+            import zipfile
+            logger.info(f"解压 Chromium zip: {zip_path}")
+            os.makedirs(lb_dir, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(lb_dir)
+            logger.info(f"解压完成")
+        else:
+            logger.warning(f"chromium zip 不存在: {zip_path}")
 
-    # 在解压目录中找 chromium
-    if os.path.exists(chromium_dir):
-        for root, dirs, files in os.walk(chromium_dir):
+    # 在 .local-browsers 中找 chromium
+    if os.path.exists(lb_dir):
+        for root, dirs, files in os.walk(lb_dir):
             for f in files:
                 if f == 'chrome-headless-shell.exe':
                     found = os.path.join(root, f)
@@ -92,13 +95,13 @@ def _find_chromium():
 def _get_browser():
     """获取或创建持久化 Chromium 实例（线程安全）"""
     global _browser, _browser_init_ts, _playwright, _context
-    chromium_exe = _find_chromium()
-    # 设置 PLAYWRIGHT_BROWSERS_PATH 指向 _internal，让 playwright 自动查找 chromium
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-    internal_dir = os.path.join(exe_dir, '_internal')
-    if os.path.exists(internal_dir):
-        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = internal_dir
-        logger.info(f"设置 PLAYWRIGHT_BROWSERS_PATH={internal_dir}")
+    lb_dir = os.path.join(exe_dir, '_internal', 'playwright', 'driver', 'package', '.local-browsers')
+    # 让 playwright 去 .local-browsers 目录找 chromium
+    if os.path.exists(lb_dir):
+        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = lb_dir
+        logger.info(f"设置 PLAYWRIGHT_BROWSERS_PATH={lb_dir}")
+    chromium_exe = _find_chromium()
     logger.info(f"chromium_exe from _find_chromium: {chromium_exe}")
     with _browser_lock:
         now = time.time()
