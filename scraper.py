@@ -38,13 +38,25 @@ _context = None
 def _get_browser():
     """获取或创建持久化 Chromium 实例（线程安全）"""
     global _browser, _browser_init_ts, _playwright, _context
-    # 打包后告诉 Playwright 去哪里找浏览器
     meipass = getattr(sys, 'frozen', False) and getattr(sys, '_MEIPASS', None)
+    chromium_exe = None
     if meipass:
-        browsers_root = os.path.join(meipass, 'playwright', 'driver', 'package', '.local-browsers')
-        if os.path.exists(browsers_root):
-            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browsers_root
-            logger.info(f"PLAYWRIGHT_BROWSERS_PATH={browsers_root}")
+        # 打包后的 exe：从 playwright/driver/package/.local-browsers/ 下找 chromium
+        root = os.path.join(meipass, 'playwright', 'driver', 'package', '.local-browsers')
+        if os.path.exists(root):
+            for sub in os.listdir(root):
+                candidate = os.path.join(root, sub, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe')
+                if os.path.exists(candidate):
+                    chromium_exe = candidate
+                    break
+                candidate2 = os.path.join(root, sub, 'chromium_headless_shell-1208', 'chrome-headless-shell-win64', 'chrome-headless-shell.exe')
+                if os.path.exists(candidate2):
+                    chromium_exe = candidate2
+                    break
+        if chromium_exe:
+            logger.info(f"使用打包的 Chromium: {chromium_exe}")
+        else:
+            logger.warning(f"未找到打包的 Chromium，root={root}, list={os.listdir(root) if os.path.exists(root) else 'not exists'}")
     with _browser_lock:
         now = time.time()
         if _browser is None or (now - _browser_init_ts) > BROWSER_TTL:
@@ -54,7 +66,10 @@ def _get_browser():
                 _browser = None
             _playwright = sync_playwright().__enter__()
             logger.info("Playwright 启动成功")
-            _browser = _playwright.chromium.launch(headless=True)
+            opts = {"headless": True}
+            if chromium_exe:
+                opts["executable_path"] = chromium_exe
+            _browser = _playwright.chromium.launch(**opts)
             _browser_init_ts = now
             logger.info("Chromium 启动成功（将复用5分钟）")
         return _browser
