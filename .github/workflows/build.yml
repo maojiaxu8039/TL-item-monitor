@@ -22,7 +22,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller TL_monitor.spec --clean -y
+          pyinstaller --collect-all playwright TL_monitor.spec --clean -y
 
       - name: Bundle Chromium
         run: |
