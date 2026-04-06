@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
 """
 TL_item_monitor - Playwright 火价抓取模块
+支持赛季/专家两种模式，从千岛抓取实时火价
 """
-import sys
-import os
-import time
-import threading
-import logging
-import urllib.request
-import urllib.error
-import zipfile
 import json
 import re
+import time
+import logging
+import urllib.parse
+import threading
+import os
+import sys
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    print("ERROR: playwright not installed. Run: pip install playwright && playwright install chromium")
+    exit(1)
 
+logger = logging.getLogger("fire_scraper")
+
+CHINA_TZ = timezone(timedelta(hours=8))
+
+# ========== 持久化浏览器（全局复用，避免每次启动 Chromium）==========
 _browser = None
-_browser_init_ts = 0.0
-_playwright = None
-_context = None
 _browser_lock = threading.Lock()
-_scrape_count = 0
+_browser_init_ts = 0
+BROWSER_TTL = 1800  # 30分钟复用
 
-BROWSER_TTL = 1800  # 30分钟复用，减少重启
+_playwright = None
 
 
 def _find_chromium():
@@ -57,7 +65,7 @@ def _find_chromium():
 
 def _get_browser():
     """获取或创建持久化 Chromium 实例（线程安全）"""
-    global _browser, _browser_init_ts, _playwright, _context
+    global _browser, _browser_init_ts, _playwright
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
     internal_dir = os.path.join(exe_dir, '_internal')
     chromium_exe = _find_chromium()
@@ -72,7 +80,6 @@ def _get_browser():
                 except Exception:
                     pass
                 _browser = None
-            from playwright.sync_api import sync_playwright
             _playwright = sync_playwright().__enter__()
             logger.info("Playwright 启动成功")
             opts = {"headless": True}
@@ -80,7 +87,7 @@ def _get_browser():
                 opts["executable_path"] = chromium_exe
             _browser = _playwright.chromium.launch(**opts)
             _browser_init_ts = now
-            logger.info("Chromium 启动成功（将复用5分钟）")
+            logger.info("Chromium 启动成功（将复用30分钟）")
         return _browser
 
 
@@ -124,65 +131,67 @@ def _build_url(mode: str) -> str:
 
 
 def now_ts():
-    from datetime import datetime
-    return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+    return datetime.now(CHINA_TZ).strftime("%Y-%m-%d %H:%M")
 
 
 def fetch_fire_price(mode: str = "赛季普通") -> Optional[dict]:
-    """抓取火价数据"""
-    global _scrape_count
-    _scrape_count += 1
+    """
+    从千岛抓取实时火价数据（线程安全，每次创建独立 Playwright 实例）
+    mode: "赛季普通" | "赛季专家"
+    """
+    if mode == "赛季":
+        mode = "赛季普通"
     url = _build_url(mode)
+    result = {}
 
     try:
-        browser = _get_browser()
-        page = browser.new_page()
-        page.goto(url, wait_until="load", timeout=30000)
-        page.wait_for_selector("body", timeout=15000)
-        page.wait_for_timeout(3000)
-        content = page.content()
-        page.close()
+        # 每次创建独立的 Playwright 实例（避免跨线程问题）
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                locale="zh-CN",
+            )
+            page = context.new_page()
+
+            def handle_response(response):
+                if "get-spu-latest-trading-summary" in response.url and response.status == 200:
+                    try:
+                        data = response.json()
+                        summary = data.get("data", {}).get("summary", {})
+                        result.update({
+                            "fire_per_rmb": summary.get("amountPerRmb"),
+                            "rmb_per_fire": summary.get("rmbPerAmount"),
+                            "increase_ratio": summary.get("amountPerRmbIncreaseRatio"),
+                            "trading_volume": summary.get("tradingVolume"),
+                        })
+                    except Exception:
+                        pass
+
+            page.on("response", handle_response)
+            logger.info(f"抓取火价 [{mode}]...")
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            page.wait_for_timeout(1500)
+            page.close()
+            browser.close()
+
+        if result:
+            fire_per_rmb = float(result.get("fire_per_rmb") or 0)
+            ten_k = round(10000 / fire_per_rmb, 4) if fire_per_rmb else 0
+            result.update({
+                "ten_k": ten_k,
+                "source": f"千岛-{mode}",
+                "ts": now_ts(),
+            })
+            logger.info(f"火价抓取成功: {ten_k} 元/万火 [{mode}]")
+            return result
+        else:
+            logger.warning("火价抓取失败: 未获取到数据")
+
     except Exception as e:
-        logger.error(f"浏览器打开失败: {e}")
-        return None
+        logger.error(f"火价抓取异常: {e}")
 
-    try:
-        m = re.search(r'\{"tradingVolume"\s*:\s*"?([0-9,]+)"?\s*,"firePerRmb"\s*:\s*([0-9.]+)', content)
-        if not m:
-            m = re.search(r'"tenKPrice"\s*:\s*"?([0-9.]+)"?', content)
-        if not m:
-            logger.warning(f"页面解析失败，内容片段: {content[:200]}")
-            return None
-
-        raw = content
-        ten_k = 0.0
-        vol = None
-        fpr = 0.0
-
-        m1 = re.search(r'"tenKPrice"\s*:\s*"?([0-9.]+)"?', raw)
-        if m1:
-            ten_k = float(m1.group(1))
-
-        m2 = re.search(r'"tradingVolume"\s*:\s*"?([0-9,]+)"?', raw)
-        if m2:
-            vol = m2.group(1).replace(',', '')
-
-        m3 = re.search(r'"firePerRmb"\s*:\s*"?([0-9.]+)"?', raw)
-        if m3:
-            fpr = float(m3.group(1))
-
-        result = {
-            "ten_k": ten_k,
-            "fire_per_rmb": fpr,
-            "trading_volume": vol or "0",
-            "ts": now_ts(),
-            "source": mode,
-        }
-        logger.info(f"抓取成功: {ten_k} 元/万火")
-        return result
-    except Exception as e:
-        logger.error(f"解析失败: {e}")
-        return None
+    return None
 
 
 def build_alert_text(r: dict, r_prev: Optional[dict] = None) -> str:
