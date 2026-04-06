@@ -21,15 +21,6 @@ def _get_notifier():
 
     if system == "Windows" or _sys_platform == "win32":
         try:
-            from winotify import Notification
-            _notifier = "winotify"
-            logger.info("通知方式: winotify")
-            return _notifier
-        except Exception as e:
-            logger.warning(f"winotify 不可用: {type(e).__name__}: {e}")
-
-        # PowerShell 备用方案
-        try:
             r = subprocess.run(
                 ['powershell', '-Command', 'exit 0'],
                 capture_output=True, timeout=5
@@ -74,7 +65,7 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
             app_id=app_id,
             title=title,
             msg=message,
-            duration=duration,
+            duration=20000,
             icon=icon_abs
         )
         try:
