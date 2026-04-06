@@ -17,9 +17,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pyinstaller playwright pyyaml numpy pillow
-          playwright install chromium --with-deps
+        run: pip install --upgrade pyinstaller playwright pyyaml numpy pillow
 
       - name: Build with PyInstaller
         run: pyinstaller TL_monitor.spec --clean -y
@@ -27,10 +25,34 @@ jobs:
       - name: Bundle playwright Python package
         run: python -c "import playwright, os, shutil; src = os.path.dirname(playwright.__file__); dst = 'dist/TL_monitor/_internal/playwright'; os.makedirs(dst, exist_ok=True); [shutil.copytree(os.path.join(src, i), os.path.join(dst, i), dirs_exist_ok=True) if os.path.isdir(os.path.join(src, i)) else shutil.copy2(os.path.join(src, i), os.path.join(dst, i)) for i in os.listdir(src)]"
 
-      - name: Bundle Chromium to playwright driver location
-        run: |
-          New-Item -ItemType Directory -Path "dist/TL_monitor/_internal/playwright/driver/package/.local-browsers/chromium_headless_shell-1208/chrome-headless-shell-win64" -Force | Out-Null
-          Copy-Item -Path ($env:LOCALAPPDATA + "\ms-playwright\chromium_headless_shell-1208\chrome-headless-shell-win64\*") -Destination "dist/TL_monitor/_internal/playwright/driver/package/.local-browsers/chromium_headless_shell-1208/chrome-headless-shell-win64/" -Recurse -Force
+      - name: Install and bundle Chromium
+        run: python -c "
+import os, shutil, subprocess, sys
+
+# Install chromium to a local path we control
+browsers_root = os.path.abspath('dist/TL_monitor/_internal/playwright/driver/package/.local-browsers')
+os.makedirs(browsers_root, exist_ok=True)
+
+# Use playwright's install API
+from playwright._impl._driver import get_driver_env
+env = dict(get_driver_env())
+env['PLAYWRIGHT_BROWSERS_PATH'] = browsers_root
+
+# Run playwright install
+result = subprocess.run(
+    [sys.executable, '-m', 'playwright', 'install', 'chromium', '--with-deps'],
+    env=env,
+    capture_output=True, text=True
+)
+print(result.stdout[-500:] if result.stdout else '')
+print(result.stderr[-500:] if result.stderr else '')
+
+# Verify
+for root, dirs, files in os.walk(browsers_root):
+    for f in files:
+        if f.endswith('.exe'):
+            print('Found exe:', os.path.join(root, f))
+"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
