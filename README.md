@@ -1,5 +1,29 @@
 # TL物品火价监控 - 项目文档
 
+## 📋 核心源文件说明
+
+| 文件 | 作用 |
+|------|------|
+| **index.html** | 页面前端 - 完整UI界面（搜索、物品列表、火价显示、导入功能等） |
+| **server.py** | HTTP服务器 - 提供API接口（火价抓取、物品数据、定时任务调度） |
+| **scraper.py** | 火价爬虫 - Playwright驱动Chromium抓取千岛火价数据（线程安全版） |
+| **config.yaml** | 配置文件 - 火价模式、抓取间隔、JSON路径等参数 |
+| **data/full_table.json** | 物品数据库 - 全部装备物品的价格数据 |
+| **import_template.csv** | 导入模板 - 用户自定义物品列表的导入格式模板 |
+| **TL_monitor.spec** | PyInstaller打包配置 - 定义Windows EXE打包规则 |
+| **requirements.txt** | Python依赖 - playwright/pyyaml/numpy/Pillow等 |
+| **logo.png** | 应用图标 |
+| **start.bat** | Windows启动脚本 - 双击运行（自动打开浏览器） |
+| **setup.bat** | Windows安装脚本 - 初始化依赖环境 |
+| **build.bat** | Windows打包脚本 - 调用PyInstaller生成EXE |
+| **.github/workflows/build.yml** | GitHub Actions自动构建 - 在Windows云端自动打包EXE |
+| **.gitignore** | Git忽略规则 - 排除dist/build/__pycache__等 |
+| **README.md** | 项目说明文档 |
+| **BUILD.md** | 构建指南 |
+| **QUICKSTART.md** | 快速入门指南 |
+
+---
+
 ## 📌 项目概述
 
 TL（Torchlight/火炬之光）物品火价监控系统，用于追踪游戏中物品的火价（游戏货币），帮助玩家评估物品价值。
