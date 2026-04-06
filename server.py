@@ -181,7 +181,7 @@ def _do_worth_check():
         if change >= 10:
             direction = "↑" if fp > prev_fp else "↓"
             pct_str = str(round(change, 1)) + "%"
-            msg = "当前: %.4f 元/万火，较上次 %s%s (变化 %s)\n火价模式: %s" % (fp, direction, pct_str, pct_str, _state.fire_price_mode)
+            msg = "当前: %.2f 元/万火，较上次 %s%s (变化 %s)\n火价模式: %s" % (fp, direction, pct_str, pct_str, _state.fire_price_mode)
             try:
                 show_notification(
                     title="火价变动",

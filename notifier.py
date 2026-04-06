@@ -40,10 +40,19 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
     ntype = _get_notifier()
 
     if ntype == "winotify":
-        import os
+        import os, sys
         from winotify import Notification
         # Windows icon 必须是绝对路径
-        icon_abs = os.path.abspath(icon) if icon else None
+        # 打包后 exe 环境下用 sys.executable 目录解析
+        if icon:
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # PyInstaller 打包环境：图标在 exe 同目录
+                exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+                if not os.path.isabs(icon):
+                    icon = os.path.join(exe_dir, icon)
+            else:
+                icon = os.path.abspath(icon)
+        icon_abs = icon
         toast = Notification(
             app_id=app_id,
             title=title,
@@ -62,9 +71,14 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
         cmd = [tn_path, '-title', title, '-message', message]
         # 图标：terminal-notifier 支持 file:// 绝对路径
         if icon:
-            icon_abs = os.path.abspath(icon)
-            if os.path.exists(icon_abs):
-                cmd += ['-appIcon', f'file://{icon_abs}']
+            if getattr(sys, 'frozen', False):
+                exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+                if not os.path.isabs(icon):
+                    icon = os.path.join(exe_dir, icon)
+            else:
+                icon_abs = os.path.abspath(icon)
+            if os.path.exists(icon):
+                cmd += ['-appIcon', f'file://{os.path.abspath(icon)}']
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
 
     else:

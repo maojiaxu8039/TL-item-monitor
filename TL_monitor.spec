@@ -27,6 +27,7 @@ a = Analysis(
         ('import_template.csv', '.'),
         ('config.yaml', '.'),
         ('logo.png', '.'),
+        ('logo.ico', '.'),
         ('notifier.py', '.'),
     ],
     hiddenimports=[
