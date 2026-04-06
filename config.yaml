@@ -1,0 +1,18 @@
+fire_price:
+  mode: 赛季普通
+  scrape_interval: 300
+  scrape_enabled: true
+items:
+  json_path: D:\刷图小助手 - 螺丝君\_internal\full_table.json
+  reload_interval: 300
+  auto_reload: true
+server:
+  port: 19877
+  access_code: tlifire2026
+feishu:
+  enabled: false
+  token: URxNs0fxmhE1TKtK91HcScvVnGf
+  sheet_id: 999fda
+  app_id: cli_a917f016a8795bd2
+  app_secret: slm61g5YtraWOYRHHnK9DhroCVwJEPB7
+  user_open_id: ou_e401d376ae91c0a54721d7da0ef5fd5c
