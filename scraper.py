@@ -34,37 +34,10 @@ BROWSER_TTL = 1800  # 30分钟复用
 _playwright = None
 
 
-def _find_chromium():
-    """尝试找到 chromium 可执行文件路径"""
-    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-    base_dir = os.path.join(exe_dir, '_internal')
-    chromium_dir = os.path.join(base_dir, 'chromium_headless_shell-1208')
-
-
-    # 在目录中找 chrome-headless-shell.exe
-    if os.path.exists(chromium_dir):
-        # 关键：设置 PLAYWRIGHT_BROWSERS_PATH，让 playwright 的 browser_executable_path()
-        # 能找到我们打包的 chromium
-        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = base_dir
-        logger.info(f"PLAYWRIGHT_BROWSERS_PATH set to: {base_dir}")
-        for root, dirs, files in os.walk(chromium_dir):
-            for f in files:
-                if f == 'chrome-headless-shell.exe':
-                    found = os.path.join(root, f)
-                    logger.info(f"找到 Chromium: {found}")
-                    return found
-
-    logger.warning(f"未找到 chromium，chromium_dir={chromium_dir}")
-    return None
-
 
 def _get_browser():
     """获取或创建持久化 Chromium 实例（线程安全）"""
     global _browser, _browser_init_ts, _playwright
-    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-    internal_dir = os.path.join(exe_dir, '_internal')
-    chromium_exe = _find_chromium()
-    logger.info(f"chromium_exe: {chromium_exe}")
 
     with _browser_lock:
         now = time.time()
@@ -77,10 +50,7 @@ def _get_browser():
                 _browser = None
             _playwright = sync_playwright().__enter__()
             logger.info("Playwright 启动成功")
-            opts = {"headless": True}
-            if chromium_exe:
-                opts["executable_path"] = chromium_exe
-            _browser = _playwright.chromium.launch(**opts)
+            _browser = _playwright.chromium.launch(headless=True)
             _browser_init_ts = now
             logger.info("Chromium 启动成功（将复用30分钟）")
         return _browser

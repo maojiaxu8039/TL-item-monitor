@@ -1,15 +1,16 @@
-name: Build Windows EXE
+name: CI
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -17,19 +18,16 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install --upgrade pyinstaller playwright pyyaml numpy pillow && playwright install chromium --with-deps
+        run: pip install -r requirements.txt
 
+      - name: Install Chromium
+        run: playwright install chromium
 
-      - name: Build with PyInstaller
-        run: pyinstaller TL_monitor.spec --clean -y
-
-      - name: Copy Chromium to _internal
+      - name: Syntax check
         run: |
-          python -c "import os, shutil; la = os.environ.get('LOCALAPPDATA'); src = os.path.join(la, 'ms-playwright', 'chromium_headless_shell-1208'); dst = 'dist/TL_monitor/_internal/chromium_headless_shell-1208'; os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copytree(src, dst, dirs_exist_ok=True); print('Copied Chromium to', dst)"
+          python -m py_compile server.py scraper.py notifier.py
+          echo "Syntax check passed"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: TL_monitor-win
-          path: dist/TL_monitor/
-          compression-level: 9
+      - name: Test import
+        run: |
+          python -c "import server, scraper, notifier; print('All imports OK')"

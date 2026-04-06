@@ -4,6 +4,7 @@ import sys
 import platform
 import os
 import logging
+import subprocess
 
 _notifier = None
 
@@ -27,16 +28,18 @@ def _get_notifier():
         except Exception as e:
             logger.warning(f"winotify 不可用: {type(e).__name__}: {e}")
 
-        # # PowerShell 备用方案（暂时注释）
-        # try:
-        #     import subprocess
-        #     r = subprocess.run(['powershell', '-Command', 'exit 0'], capture_output=True, timeout=5)
-        #     if r.returncode == 0:
-        #         _notifier = "powershell"
-        #         logger.info("通知方式: PowerShell")
-        #         return _notifier
-        # except Exception as e:
-        #     logger.warning(f"PowerShell 不可用: {e}")
+        # PowerShell 备用方案
+        try:
+            r = subprocess.run(
+                ['powershell', '-Command', 'exit 0'],
+                capture_output=True, timeout=5
+            )
+            if r.returncode == 0:
+                _notifier = "powershell"
+                logger.info("通知方式: PowerShell")
+                return _notifier
+        except Exception as e:
+            logger.warning(f"PowerShell 不可用: {e}")
 
     elif system == "Darwin":
         try:
@@ -56,13 +59,7 @@ def _resolve_icon(icon):
     """解析图标为绝对路径"""
     if not icon:
         return None
-    if getattr(sys, 'frozen', False):
-        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-        if not os.path.isabs(icon):
-            icon = os.path.join(exe_dir, icon)
-    else:
-        icon = os.path.abspath(icon)
-    return icon if os.path.exists(icon) else None
+    return os.path.abspath(icon) if os.path.exists(os.path.abspath(icon)) else None
 
 
 def show_notification(title: str, message: str, duration: int = 20000, app_id: str = "TL Monitor", icon: str = None):
@@ -87,9 +84,33 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
             logger.warning(f"winotify.show() 失败: {e}")
         return
 
+    elif ntype == "powershell":
+        msg_short = message.replace('\n', ' | ')[:200]
+        ps = (
+            f'Add-Type -AssemblyName System.Windows.Forms; '
+            f'$ni = New-Object System.Windows.Forms.NotifyIcon; '
+            f'$ni.Icon = [System.Drawing.SystemIcons]::Information; '
+            f'$ni.Visible = $true; '
+            f'$ni.ShowBalloonTip(5000, "{title}", "{msg_short}", "Info"); '
+            f'Start-Sleep -Seconds 6; '
+            f'$ni.Dispose()'
+        )
+        try:
+            r = subprocess.run(
+                ['powershell', '-WindowStyle', 'Hidden', '-NoProfile', '-Command', ps],
+                capture_output=True, timeout=15
+            )
+            if r.returncode == 0:
+                logger.info(f"PowerShell 通知成功: {title}")
+            else:
+                stderr = r.stderr.decode(errors='ignore').strip()
+                logger.warning(f"PowerShell 通知失败: {stderr[:80] if stderr else 'exit ' + str(r.returncode)}")
+        except Exception as e:
+            logger.warning(f"PowerShell 通知异常: {e}")
+        return
+
     elif ntype == "pync":
         import pync as _pync
-        import subprocess
         tn_path = _pync.Notifier.bin_path
         if isinstance(tn_path, bytes):
             tn_path = tn_path.decode()
