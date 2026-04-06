@@ -25,9 +25,9 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller TL_monitor.spec --clean -y
 
-      - name: Package Chromium as zip
+      - name: Copy Chromium to _internal
         run: |
-          python -c "import os, zipfile; la = os.environ.get('LOCALAPPDATA'); src = os.path.join(la, 'ms-playwright', 'chromium_headless_shell-1208'); zip_path = 'dist/TL_monitor/_internal/chromium_headless_shell.zip'; os.makedirs(os.path.dirname(zip_path), exist_ok=True); zf = zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9); [zf.write(os.path.join(root, f), os.path.relpath(os.path.join(root, f), src)) for root, dirs, files in os.walk(src) for f in files]; zf.close(); print('Zip size:', os.path.getsize(zip_path), 'bytes')"
+          python -c "import os, shutil; la = os.environ.get('LOCALAPPDATA'); src = os.path.join(la, 'ms-playwright', 'chromium_headless_shell-1208'); dst = 'dist/TL_monitor/_internal/chromium_headless_shell-1208'; os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copytree(src, dst, dirs_exist_ok=True); print('Copied Chromium to', dst)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

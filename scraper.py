@@ -39,16 +39,7 @@ def _find_chromium():
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
     base_dir = os.path.join(exe_dir, '_internal')
     chromium_dir = os.path.join(base_dir, 'chromium_headless_shell-1208')
-    zip_path = os.path.join(base_dir, 'chromium_headless_shell.zip')
 
-    # 如果解压目录不存在，但 zip 存在，则先解压
-    if not os.path.exists(chromium_dir) and os.path.exists(zip_path):
-        import zipfile
-        logger.info(f"解压 Chromium: {zip_path}")
-        os.makedirs(base_dir, exist_ok=True)
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            zf.extractall(base_dir)
-        logger.info(f"解压完成")
 
     # 在目录中找 chrome-headless-shell.exe
     if os.path.exists(chromium_dir):
