@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 server.log
 data/tl_monitor.db
+config.yaml
