@@ -52,8 +52,23 @@ def init_db():
             UNIQUE(item_id, mode, scraped_at)
         );
 
+        -- 记录每个小时的火价本身（元/万火、1元=多少火、涨幅等）
+        CREATE TABLE IF NOT EXISTS fire_price_record (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            mode       TEXT NOT NULL DEFAULT '赛季普通',
+            ten_k      REAL NOT NULL DEFAULT 0,
+            fire_per_rmb REAL NOT NULL DEFAULT 0,
+            increase_ratio REAL DEFAULT 0,
+            trading_volume TEXT DEFAULT '',
+            source     TEXT DEFAULT '',
+            ts         TEXT DEFAULT '',
+            scraped_at INTEGER NOT NULL,
+            UNIQUE(mode, scraped_at)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_fire_price_item ON fire_price_log(item_id);
         CREATE INDEX IF NOT EXISTS idx_fire_price_time ON fire_price_log(scraped_at);
+        CREATE INDEX IF NOT EXISTS idx_fire_price_record_time ON fire_price_record(scraped_at);
     """)
     conn.commit()
     conn.close()
@@ -62,21 +77,17 @@ def init_db():
 
 def upsert_items(items: list, item_ids=None):
     """
-    items: list of dict, each dict is one item record.
-    item_ids: optional list of strings aligned with items, used when item dict has no id field
-              (i.e. item_id comes from the parent dict key).
-    """
-    """
-    将 full_table.json 的物品列表写入数据库。
-    只插入新物品，已存在的不更新。
-    返回: (新增数量, 已存在数量)
+    将 full_table.json 的物品列表写入/更新到数据库。
+    - 新物品：INSERT
+    - 已存在物品：REPLACE（price 等字段会同步更新）
+    返回: (新增/更新数量, 空条目跳过数量)
     """
     if not items:
         return 0, 0
 
     conn = _get_conn()
     cur = conn.cursor()
-    added = 0
+    upserted = 0
     skipped = 0
 
     for i, item in enumerate(items):
@@ -88,16 +99,11 @@ def upsert_items(items: list, item_ids=None):
             skipped += 1
             continue
 
-        # 检查是否已存在
-        cur.execute("SELECT 1 FROM items WHERE item_id = ?", (item_id,))
-        if cur.fetchone():
-            skipped += 1
-            continue
-
+        # INSERT OR REPLACE：item_id 存在则覆盖（更新 price 等字段），不存在则插入
         cur.execute("""
-            INSERT INTO items (item_id, name, item_type, item_from, price,
-                               requires_uncorrupted, requires_unidentified)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO items (item_id, name, item_type, item_from, price,
+                                          requires_uncorrupted, requires_unidentified, added_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
         """, (
             item_id,
             item.get("name", ""),
@@ -107,13 +113,13 @@ def upsert_items(items: list, item_ids=None):
             int(bool(item.get("requires_uncorrupted", False))),
             int(bool(item.get("requires_unidentified", False))),
         ))
-        added += 1
+        upserted += 1
 
     conn.commit()
     conn.close()
-    if added > 0:
-        logger.info(f"物品同步完成: 新增 {added} 条，跳过 {skipped} 条")
-    return added, skipped
+    if upserted > 0:
+        logger.info(f"物品同步完成: 写入/更新 {upserted} 条，跳过空条目 {skipped} 条")
+    return upserted, skipped
 
 
 def log_fire_price(fire_price_record: dict, mode: str = "赛季普通"):
@@ -130,9 +136,7 @@ def log_fire_price(fire_price_record: dict, mode: str = "赛季普通"):
 
     # fire_per_rmb: 1元人民币对应多少火（用于换算RMB Display，不改变存储逻辑）
     fire_per_rmb = fire_price_record.get("fire_per_rmb", 0)
-    if not fire_per_rmb:
-        conn.close()
-        return
+    ten_k = fire_price_record.get("ten_k", 0)
 
     cur.execute("SELECT item_id, price FROM items")
     rows = cur.fetchall()
@@ -158,6 +162,40 @@ def log_fire_price(fire_price_record: dict, mode: str = "赛季普通"):
     conn.commit()
     conn.close()
     logger.info(f"火价记录写入完成: {inserted} 条 [{mode}]")
+
+
+def log_fire_price_record(fire_price_record: dict, mode: str = "赛季普通"):
+    """
+    将当前火价本身（元/万火、1元=多少火、涨幅、交易量）记录到 fire_price_record 表。
+    每小时一条，按 (mode, scraped_at) 去重。
+    """
+    if not fire_price_record:
+        return
+
+    conn = _get_conn()
+    cur = conn.cursor()
+    scraped_at = int(time.time())
+
+    try:
+        cur.execute("""
+            INSERT OR REPLACE INTO fire_price_record
+                (mode, ten_k, fire_per_rmb, increase_ratio, trading_volume, source, ts, scraped_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            mode,
+            fire_price_record.get("ten_k", 0),
+            fire_price_record.get("fire_per_rmb", 0),
+            fire_price_record.get("increase_ratio", 0),
+            fire_price_record.get("trading_volume", ""),
+            fire_price_record.get("source", ""),
+            fire_price_record.get("ts", ""),
+            scraped_at,
+        ))
+        logger.info(f"火价记录(ten_k)写入完成: {fire_price_record.get('ten_k')} 元/万火 [{mode}]")
+    except Exception as e:
+        logger.error(f"写入火价记录失败: {e}")
+    finally:
+        conn.close()
 
 
 # ========== 查询接口 ==========
@@ -251,6 +289,37 @@ def get_latest_fire_prices(mode: str = "赛季普通") -> dict:
     rows = cur.fetchall()
     conn.close()
     return {r["item_id"]: dict(r) for r in rows}
+
+
+def get_fire_record_history(hours: int = 24, mode: str = "赛季普通") -> list:
+    """获取火价本身的历史（ten_k, fire_per_rmb 等）"""
+    conn = _get_conn()
+    cur = conn.cursor()
+    since = int(time.time()) - hours * 3600
+
+    cur.execute("""
+        SELECT ten_k, fire_per_rmb, increase_ratio, trading_volume, source, ts, scraped_at, mode
+        FROM fire_price_record
+        WHERE mode = ? AND scraped_at >= ?
+        ORDER BY scraped_at ASC
+    """, (mode, since))
+    rows = cur.fetchall()
+    conn.close()
+
+    return [
+        {
+            "ten_k": r["ten_k"],
+            "fire_per_rmb": r["fire_per_rmb"],
+            "increase_ratio": r["increase_ratio"],
+            "trading_volume": r["trading_volume"],
+            "source": r["source"],
+            "ts": r["ts"],
+            "scraped_at": r["scraped_at"],
+            "scraped_time": datetime.fromtimestamp(r["scraped_at"]).strftime("%Y-%m-%d %H:%M"),
+            "mode": r["mode"],
+        }
+        for r in rows
+    ]
 
 
 def get_stats() -> dict:

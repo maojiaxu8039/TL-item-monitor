@@ -19,7 +19,6 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
 .td-worth{text-align:left!important}
 .worth-good{color:#00d2a0!important;font-weight:600;text-align:left}
 .th-worth{text-align:left}.worth-bad{color:#ff6b6b!important;font-weight:600;text-align:left}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;min-height:100vh}
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
 .header-icon{width:36px;height:36px;background:linear-gradient(135deg,#f59e0b,#ef4444);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
 .header-title{font-size:17px;font-weight:700}
@@ -229,8 +228,23 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
 #historyModal .m-stat .v.up{color:var(--rmb)}
 #historyModal .m-stat .v.down{color:var(--danger)}
 #historyModal .modal-box{max-width:640px;width:95vw}
+/* 火价走势弹窗 */
+#fireHistoryModal .m-body{padding:20px;display:flex;flex-direction:column;gap:14px}
+#fireHistoryModal .m-tabs{display:flex;gap:6px}
+#fireHistoryModal .m-tab{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:13px;color:var(--muted);transition:all .2s}
+#fireHistoryModal .m-tab:hover{color:var(--text);border-color:var(--muted)}
+#fireHistoryModal .m-tab.active{background:var(--fire);color:#000;border-color:var(--fire);font-weight:600}
+#fireHistoryModal .m-chart{width:100%;height:320px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px}
+#fireHistoryModal .m-empty{text-align:center;color:var(--muted);padding:48px;font-size:14px}
+#fireHistoryModal .m-stats{display:flex;gap:20px;padding:0 4px}
+#fireHistoryModal .m-stat{display:flex;flex-direction:column;gap:2px}
+#fireHistoryModal .m-stat .l{font-size:11px;color:var(--muted)}
+#fireHistoryModal .m-stat .v{font-size:15px;font-weight:600;color:var(--fire)}
+#fireHistoryModal .m-stat .v.up{color:var(--rmb)}
+#fireHistoryModal .m-stat .v.down{color:var(--danger)}
+#fireHistoryModal .modal-box{max-width:640px;width:95vw}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -238,7 +252,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
 <div class="header">
   <img src="logo.png" class="header-icon" style="width:36px;height:36px;border-radius:8px;object-fit:contain;background:transparent;" alt="logo">
   <div><div class="header-title">火炬之光物品策略</div><div class="header-sub" id="statusMode">赛季普通 · 5分钟自动抓取</div></div>
-  <div class="fire-badge" onclick="fetchFirePrice()" title="点击刷新火价"><span class="fp" id="fpDisplay">--</span><span class="fl">元/万火</span></div>
+  <div class="fire-badge" onclick="openFireHistoryModal()" title="点击查看火价走势"><span class="fp" id="fpDisplay">--</span><span class="fl">元/万火</span></div>
   <div class="fire-input-wrap" title="手动输入火价"><span>🔥</span><input type="number" id="fpInput" placeholder="100" min="1" step="0.01"><span>元/万火</span></div>
   <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()"><span class="btn-text">↻ 刷新</span></button>
   <button class="settings-btn" id="settingsBtn" onclick="toggleSettings()" title="设置">⚙</button>
@@ -570,15 +584,14 @@ function doSearch(){
   dd.classList.add("show");
   STATE.selectedItem=null;
 
-  var results=STATE.searchResults||[];
   var visible=STATE.searchVisibleCount||15;
-  if(!results.length){
+  if(!STATE.searchResults.length){
     dd.innerHTML='<div class="search-hint">未找到匹配物品</div>';
     STATE.selectedItem=null;
 
     return
   }
-  var shown=results.slice(0,visible);
+  var shown=STATE.searchResults.slice(0,visible);
   var html=shown.map(function(item){
     var id=escAttr(item.item_id||item.物品ID||item.name);
     return'<div class="search-result-item" onclick="selectItem(\''+id+'\')"><div><div class="sri-name">'+escHtml(item.name)+'</div><div class="sri-meta"><span class="sri-type">'+escHtml(item.type||"")+'</span></div></div><div style="display:flex;align-items:center;gap:10px;"><span class="sri-price">'+fmtFire(item.price||0)+'</span></div></div>'
@@ -863,7 +876,7 @@ function updateItemField(secId,itemId,field,value){
   var _field=typeof field==="number"?("more count".split(" ")[field-1]||field):field;
   var sec=STATE.sections.find(function(s){return Number(s.id)===Number(secId)});
   if(!sec){console.warn("sec not found",secId);return}
-  var item=sec.items.find(function(i){return i.name===itemId});
+  var item=sec.items.find(function(i){return String(i.id)===String(itemId)});
   if(!item){console.warn("item not found",itemId);return}
   if(_field==="more"){item.more=parseFloat(value)||0}
   else if(_field==="count"){item.count=Math.max(1,parseInt(value)||1)}
@@ -1069,6 +1082,116 @@ function onSectionDragStart(e){var span=e.currentTarget;window._dragSecId=span.d
 function onSectionDragEnd(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.section-card').forEach(function(el){el.classList.remove('drag-over','drag-under')});}
 function onSectionDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';var card=e.currentTarget;var rect=card.getBoundingClientRect();var mid=rect.top+rect.height/2;document.querySelectorAll('.section-card').forEach(function(el){el.classList.remove('drag-over','drag-under')});if(e.clientY<mid){card.classList.add('drag-over');card.classList.remove('drag-under')}else{card.classList.add('drag-under');card.classList.remove('drag-over')}}
 function onSectionDrop(e){e.preventDefault();var targetCard=e.currentTarget;var dragSecId=window._dragSecId;if(!dragSecId)return;var targetSecId=targetCard.dataset.secId;if(String(dragSecId)===String(targetSecId))return;var dragIdx=STATE.sections.findIndex(function(s){return String(s.id)===String(dragSecId)});var targetIdx=STATE.sections.findIndex(function(s){return String(s.id)===String(targetSecId)});if(dragIdx<0||targetIdx<0)return;var rect=targetCard.getBoundingClientRect();var mid=rect.top+rect.height/2;if(e.clientY>=mid)targetIdx++;if(targetIdx>dragIdx)targetIdx--;var moved=STATE.sections.splice(dragIdx,1)[0];STATE.sections.splice(targetIdx,0,moved);saveSections();renderAll();}
+// ========== 火价走势弹窗 ==========
+var _fireHist={chart:null,hours:24};
+function openFireHistoryModal(){
+  _fireHist.hours=24;
+  document.querySelectorAll('#fireHistoryModal .m-tab').forEach(function(b){b.classList.remove('active')});
+  document.querySelector('#fireHistoryModal .m-tab').classList.add('active');
+  document.getElementById('fireHistoryModal').style.display='flex';
+  document.getElementById('fireHistoryChartWrap').style.display='none';
+  document.getElementById('fireHistoryEmpty').style.display='none';
+  fetchFireHistoryAndDraw();
+}
+function closeFireHistoryModal(){
+  document.getElementById('fireHistoryModal').style.display='none';
+  if(_fireHist.chart){_fireHist.chart.destroy();_fireHist.chart=null}
+}
+function setFireHistoryRange(hours,btn){
+  document.querySelectorAll('#fireHistoryModal .m-tab').forEach(function(b){b.classList.remove('active')});
+  btn.classList.add('active');
+  _fireHist.hours=hours;
+  fetchFireHistoryAndDraw();
+}
+function fetchFireHistoryAndDraw(){
+  var mode=STATE.cfg&&STATE.cfg.mode||'赛季普通';
+  var url='/api/db/fire-record-history?hours='+_fireHist.hours+'&mode='+encodeURIComponent(mode);
+  fetch(url)
+    .then(function(r){return r.json()})
+    .then(function(d){drawFireHistoryResult(d.history||[]);})
+    .catch(function(){
+      document.getElementById('fireHistoryChartWrap').style.display='none';
+      document.getElementById('fireHistoryEmpty').style.display='block';
+      document.getElementById('fireHistoryEmpty').textContent='加载失败，请稍后重试';
+    });
+}
+function drawFireHistoryResult(history){
+  if(history.length===0){
+    document.getElementById('fireHistoryChartWrap').style.display='none';
+    document.getElementById('fireHistoryEmpty').style.display='block';
+    document.getElementById('fireHistoryEmpty').textContent='暂无火价历史数据';
+    document.getElementById('fireHistoryStats').innerHTML='';
+    return;
+  }
+  document.getElementById('fireHistoryChartWrap').style.display='block';
+  document.getElementById('fireHistoryEmpty').style.display='none';
+  var prices=history.map(function(p){return parseFloat(p.ten_k)||0});
+  var latest=prices[prices.length-1];
+  var first=prices[0];
+  var high=Math.max.apply(null,prices);
+  var low=Math.min.apply(null,prices);
+  var change=latest-first;
+  var changePct=first>0?(change/first*100).toFixed(1):0;
+  var upClass=change>=0?'up':'down';
+  var arrow=change>=0?'↑':'↓';
+  var firePerRmb=history.length>0?history[history.length-1].fire_per_rmb:0;
+  document.getElementById('fireHistoryStats').innerHTML=
+    '<div class="m-stat"><div class="l">当前火价</div><div class="v fire">'+(latest>0?latest.toFixed(4)+' 元/万火':'--')+'</div></div>'+
+    '<div class="m-stat"><div class="l">涨跌</div><div class="v '+upClass+'">'+arrow+' '+Math.abs(change).toFixed(4)+' ('+changePct+'%)</div></div>'+
+    '<div class="m-stat"><div class="l">最高</div><div class="v" style="color:var(--fire)">'+(high>0?high.toFixed(4):'--')+'</div></div>'+
+    '<div class="m-stat"><div class="l">最低</div><div class="v" style="color:var(--muted)">'+(low>0?low.toFixed(4):'--')+'</div></div>'+
+    '<div class="m-stat"><div class="l">1元=</div><div class="v" style="color:var(--rmb)">'+(firePerRmb>0?firePerRmb.toFixed(2)+'火':'--')+'</div></div>'+
+    '<div class="m-stat"><div class="l">数据点</div><div class="v" style="color:var(--muted)">'+history.length+'</div></div>';
+  drawFireHistoryChart(history);
+}
+function drawFireHistoryChart(history){
+  var labels=history.map(function(p){return p.scraped_time||''});
+  var prices=history.map(function(p){return parseFloat(p.ten_k)||0});
+  var minP=Math.min.apply(null,prices.filter(function(v){return v>0}));
+  var maxP=Math.max.apply(null,prices.filter(function(v){return v>0}));
+  var pad=(maxP-minP)*0.1||1;
+  if(_fireHist.chart){_fireHist.chart.destroy()}
+  var ctx=document.getElementById('fireHistoryChart').getContext('2d');
+  _fireHist.chart=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:labels,
+      datasets:[{
+        label:'元/万火',
+        data:prices,
+        borderColor:'#f59e0b',
+        backgroundColor:'rgba(245,158,11,0.08)',
+        borderWidth:2,
+        pointRadius:history.length>40?0:4,
+        pointBackgroundColor:'#f59e0b',
+        pointBorderColor:'#13172a',
+        pointBorderWidth:2,
+        fill:true,
+        tension:0.35
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#1a2035',
+          borderColor:'#f59e0b',
+          borderWidth:1,
+          titleColor:'#e2e8f0',
+          bodyColor:'#f59e0b',
+          padding:10,
+          callbacks:{label:function(ctx){return'元/万火: '+ctx.parsed.y.toFixed(4)}}
+        }
+      },
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#64748b',maxTicksLimit:10,font:{size:11}}},
+        y:{min:minP-pad,max:maxP+pad,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#64748b',font:{size:11},callback:function(v){return v.toFixed(2)}}}
+      }
+    }
+  });
+}
 init();
 
 </script>
@@ -1092,13 +1215,32 @@ init();
   </div>
 </div>
 
-<div id="importModal" class="modal-overlay" style="display:none">
+<div id="fireHistoryModal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
-      
-      <div class="modal-header-title">导入装备列表</div>
-      <button class="modal-close" onclick="closeImportModal()">✕</button>
+      <div class="modal-header-title" id="fireHistoryModalTitle">🔥 火价走势</div>
+      <button class="modal-close" onclick="closeFireHistoryModal()">✕</button>
     </div>
+    <div class="m-body">
+      <div id="fireHistoryStats" class="m-stats"></div>
+      <div class="m-tabs">
+        <button class="m-tab active" onclick="setFireHistoryRange(24,this)">24小时</button>
+        <button class="m-tab" onclick="setFireHistoryRange(168,this)">7天</button>
+        <button class="m-tab" onclick="setFireHistoryRange(720,this)">30天</button>
+      </div>
+      <div id="fireHistoryChartWrap"><canvas id="fireHistoryChart"></canvas></div>
+      <div id="fireHistoryEmpty" class="m-empty" style="display:none">暂无火价历史数据</div>
+    </div>
+  </div>
+</div>
+
+<div id="importModal" class="modal-overlay" style="display:none">
+    <div class="modal-box">
+      <div class="modal-header">
+        
+        <div class="modal-header-title">导入装备列表</div>
+        <button class="modal-close" onclick="closeImportModal()">✕</button>
+      </div>
     <div class="modal-body">
       <div class="import-form">
         <div class="import-field">

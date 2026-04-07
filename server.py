@@ -17,6 +17,7 @@ import time
 import urllib.parse
 import webbrowser
 import subprocess
+import signal
 from datetime import datetime
 from pathlib import Path
 
@@ -26,8 +27,8 @@ except ImportError:
     show_notification = None
 
 try:
-    from database import init_db, upsert_items, log_fire_price
-    from database import get_items, get_fire_price_history, get_latest_fire_prices, get_stats
+    from database import init_db, upsert_items, log_fire_price, log_fire_price_record
+    from database import get_items, get_fire_price_history, get_latest_fire_prices, get_stats, get_fire_record_history
     DB_AVAILABLE = True
 except Exception as e:
     DB_AVAILABLE = False
@@ -46,7 +47,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-SKILL_DIR = Path(__file__).parent
+
 CONFIG_FILE = BASE_DIR / "config.yaml"
 DEFAULT_ITEMS_FILE = BASE_DIR / "data" / "items.json"
 
@@ -134,7 +135,9 @@ class State:
 
     def reload_items(self, path: str = ""):
         with self.lock:
-            target = path or self.items_file_path or _config["items"].get("json_path", str(DEFAULT_ITEMS_FILE))
+            # 优先用传入的 path；其次用配置文件当前路径；不再回退到 items_file_path（避免缓存导致路径不跟随配置更新）
+            config_path = _config["items"].get("json_path", str(DEFAULT_ITEMS_FILE))
+            target = path or config_path
             try:
                 expanded = os.path.expanduser(target)
                 if not os.path.exists(expanded):
@@ -275,6 +278,9 @@ def _do_hourly_db_log():
             data = dict(_state.fire_price_record)
             mode = _state.fire_price_mode
         if data:
+            # 记录火价本身（元/万火、1元=多少火等）
+            log_fire_price_record(data, mode)
+            # 记录所有物品当前价格
             log_fire_price(data, mode)
     except Exception as e:
         logger.error(f"火价入库异常: {e}")
@@ -419,6 +425,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(get_latest_fire_prices(mode=mode))
             return
 
+        if path == "/api/db/fire-record-history" and DB_AVAILABLE:
+            params = urllib.parse.parse_qs(query)
+            hours = int(params.get("hours", [24])[0])
+            mode = params.get("mode", [_state.fire_price_mode])[0]
+            self.send_json({
+                "hours": hours,
+                "mode": mode,
+                "history": get_fire_record_history(hours=hours, mode=mode)
+            })
+            return
+
         if path == "/api/db/trigger-log" and DB_AVAILABLE:
             threading.Thread(target=_do_hourly_db_log, daemon=True).start()
             self.send_json({"ok": True, "message": "火价入库任务已触发"})
@@ -540,11 +557,37 @@ def run():
 
     threading.Thread(target=_open_browser, daemon=True).start()
 
+    # ---- graceful shutdown ----
+    _shutdown_requested = False
+
+    def _shutdown(signum, frame):
+        global _shutdown_requested
+        if _shutdown_requested:
+            logger.warning("重复收到退出信号，强制退出")
+            sys.exit(0)
+        _shutdown_requested = True
+        logger.info(f"收到信号 {signum}，开始停止服务...")
+
+        # 取消所有定时器
+        if _state.scrape_timer:
+            _state.scrape_timer.cancel()
+        if _state.reload_timer:
+            _state.reload_timer.cancel()
+        global _db_log_timer
+        if _db_log_timer:
+            _db_log_timer.cancel()
+
+        logger.info("定时器已取消，正在关闭服务器...")
+        server.shutdown()
+
+    signal.signal(signal.SIGINT, _shutdown)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, _shutdown)
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        logger.info("服务器停止")
-        server.shutdown()
+        pass  # 信号处理器会处理 shutdown
 
 
 if __name__ == "__main__":
