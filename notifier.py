@@ -20,6 +20,17 @@ def _get_notifier():
     logger.info(f"检测平台: platform.system()={repr(system)}, sys.platform={repr(_sys_platform)}")
 
     if system == "Windows" or _sys_platform == "win32":
+        # 优先 winotify
+        try:
+            import winotify
+            toast = winotify.Notification(app_id="TL Monitor", title="test", msg="test")
+            toast.show()
+            _notifier = "winotify"
+            logger.info("通知方式: winotify")
+            return _notifier
+        except Exception as e:
+            logger.warning(f"winotify 不可用: {e}")
+        # fallback 到 PowerShell
         try:
             r = subprocess.run(
                 ['powershell', '-Command', 'exit 0'],
@@ -50,7 +61,8 @@ def _resolve_icon(icon):
     """解析图标为绝对路径"""
     if not icon:
         return None
-    return os.path.abspath(icon) if os.path.exists(os.path.abspath(icon)) else None
+    abs_path = os.path.abspath(icon)
+    return abs_path if os.path.exists(abs_path) else None
 
 
 def show_notification(title: str, message: str, duration: int = 20000, app_id: str = "TL Monitor", icon: str = None):
@@ -60,14 +72,15 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
     logger = logging.getLogger(__name__)
 
     if ntype == "winotify":
-        from winotify import Notification
+        from winotify import Notification, audio
         toast = Notification(
-            app_id=app_id,
+            app_id="火炬之光物品策略",
             title=title,
             msg=message,
-            duration=20000,
+            duration='long',
             icon=icon_abs
         )
+        toast.set_audio(audio.Default, loop=False)
         try:
             toast.show()
             logger.info(f"winotify 通知成功: {title}")
@@ -82,7 +95,7 @@ def show_notification(title: str, message: str, duration: int = 20000, app_id: s
             f'$ni = New-Object System.Windows.Forms.NotifyIcon; '
             f'$ni.Icon = [System.Drawing.SystemIcons]::Information; '
             f'$ni.Visible = $true; '
-            f'$ni.ShowBalloonTip(5000, "{title}", "{msg_short}", "Info"); '
+            f'$ni.ShowBalloonTip(15000, "{title}", "{msg_short}", "Info"); '
             f'Start-Sleep -Seconds 6; '
             f'$ni.Dispose()'
         )
