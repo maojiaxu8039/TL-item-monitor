@@ -1,5 +1,5 @@
-@chcp 65001 >nul
 @echo off
+@chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 title Python 依赖包自动安装工具 (国内极速版)
 
@@ -13,6 +13,10 @@ set "fail_count=0"
 set "PYPI_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple"
 set "TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn"
 
+:: 强制切换到脚本所在目录，避免路径问题
+cd /d "%~dp0"
+
+cls
 echo ==========================================
 echo 正在检查 Python 环境...
 echo ==========================================
@@ -50,17 +54,16 @@ for %%p in (%packages%) do (
     pip install --default-timeout=120 -i %PYPI_MIRROR% --trusted-host %TRUSTED_HOST% %%p
     
     if !errorlevel! equ 0 (
-        echo [✓] %%p 安装成功
+        echo [成功] %%p 安装完成
         set /a success_count+=1
     ) else (
-        echo [✗] %%p 安装失败
+        echo [失败] %%p 安装未完成
         set "failed_packages=!failed_packages! %%p"
         set /a fail_count+=1
     )
 )
 
 :: 特殊处理：Playwright 浏览器安装
-:: 注意：浏览器二进制文件通常不从 PyPI 下载，这步主要看 Playwright 自身的 CDN
 echo.
 echo ==========================================
 echo 正在配置 Playwright 浏览器内核...
@@ -85,7 +88,7 @@ if !fail_count! gtr 0 (
     echo pip install [包名] --default-timeout=120 -i %PYPI_MIRROR% --trusted-host %TRUSTED_HOST%
 ) else (
     echo.
-    echo 🎉 恭喜！所有依赖包均已成功安装
+    echo 恭喜！所有依赖包均已成功安装
 )
 
 echo ==========================================
