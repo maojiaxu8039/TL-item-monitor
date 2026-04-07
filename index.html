@@ -213,7 +213,24 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
 .btn-confirm-import:disabled{opacity:0.4;cursor:not-allowed;pointer-events:none}
 
 @media(max-width:768px){.header{padding:10px 14px;gap:10px}.main{padding:14px}.search-bar{padding:10px 14px;flex-wrap:wrap}.settings-panel{padding:12px 14px}.header-right .total-box{display:none}}
+
+/* 历史走势弹窗 */
+#historyModal .m-body{padding:20px;display:flex;flex-direction:column;gap:14px}
+#historyModal .m-tabs{display:flex;gap:6px}
+#historyModal .m-tab{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:13px;color:var(--muted);transition:all .2s}
+#historyModal .m-tab:hover{color:var(--text);border-color:var(--muted)}
+#historyModal .m-tab.active{background:var(--fire);color:#000;border-color:var(--fire);font-weight:600}
+#historyModal .m-chart{width:100%;height:320px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px}
+#historyModal .m-empty{text-align:center;color:var(--muted);padding:48px;font-size:14px}
+#historyModal .m-stats{display:flex;gap:20px;padding:0 4px}
+#historyModal .m-stat{display:flex;flex-direction:column;gap:2px}
+#historyModal .m-stat .l{font-size:11px;color:var(--muted)}
+#historyModal .m-stat .v{font-size:15px;font-weight:600;color:var(--fire)}
+#historyModal .m-stat .v.up{color:var(--rmb)}
+#historyModal .m-stat .v.down{color:var(--danger)}
+#historyModal .modal-box{max-width:640px;width:95vw}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -696,7 +713,7 @@ function _buildSectionHtml(sec){
   var visCount=STATE.sectionVisibleItems[sec.id]||100;
   var visItems=sec.items.slice(0,visCount);
   var hiddenCount=Math.max(0,sec.items.length-visCount);
-  var itemsHtml=visItems.map(function(item){var if2=calcItemFire(item);return'<tr data-item-id="'+escAttr(item.id)+'"><td class="td-name" data-tip="'+(item.last_time?"更新："+fmtT(item.last_time):"无时间戳")+'" onmouseenter="showTooltip(event,this)" onmouseleave="hideTooltip()">'+escHtml(item.name)+'</td><td class="td-type">'+escHtml(item.type||"")+'</td><td><input type="number" class="td-input" value="'+(item.more||0)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',1,this.value);this.blur()}" min="0"></td><td><input type="number" class="td-input td-count" value="'+(item.count||1)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',2,this.value);this.blur()}" min="1"></td><td class="td-fire">'+fmtFire(if2)+'</td><td class="td-rmb">'+fmtRmb(RMB(if2))+'</td><td class="td-fire-dmg">'+fmtFireDmg(item,if2)+'</td><td class="td-worth">'+fmtWorth(item,sec.damage)+'</td><td class="td-time">'+(item.last_time?fmtT(item.last_time):"—")+'</td><td class="td-op"><button class="del-item" onclick="deleteItem('+sec.id+',\''+escAttr(item.id)+'\')" title="移除">✕</button></td></tr>'}).join("");
+  var itemsHtml=visItems.map(function(item){var if2=calcItemFire(item);return'<tr data-item-id="'+escAttr(item.id)+'"><td class="td-name" style="cursor:pointer" data-tip="'+(item.last_time?"更新："+fmtT(item.last_time):"无时间戳")+'" onmouseenter="showTooltip(event,this)" onmouseleave="hideTooltip()" onclick="openHistoryModal(\''+escAttr(item.id)+'\','+sec.id+',\''+escAttr(item.name)+'\')">'+escHtml(item.name)+'</td><td class="td-type">'+escHtml(item.type||"")+'</td><td><input type="number" class="td-input" value="'+(item.more||0)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',1,this.value);this.blur()}" min="0"></td><td><input type="number" class="td-input td-count" value="'+(item.count||1)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',2,this.value);this.blur()}" min="1"></td><td class="td-fire">'+fmtFire(if2)+'</td><td class="td-rmb">'+fmtRmb(RMB(if2))+'</td><td class="td-fire-dmg">'+fmtFireDmg(item,if2)+'</td><td class="td-worth">'+fmtWorth(item,sec.damage)+'</td><td class="td-time">'+(item.last_time?fmtT(item.last_time):"—")+'</td><td class="td-op"><button class="del-item" onclick="deleteItem('+sec.id+',\''+escAttr(item.id)+'\')" title="移除">✕</button></td></tr>'}).join("");
   var moreBtn=hiddenCount>0?'<tfoot><tr><td colspan="10" class="load-more-btn" onclick="loadMoreSectionItems('+sec.id+')">还有 '+hiddenCount+' 个物品，点击加载更多</td></tr></tfoot>':'</tbody>';
   return'<div class="section-card" data-sec-id="'+sec.id+'" ondragover="onSectionDragOver(event)" ondrop="onSectionDrop(event)"><div class="section-header"><span class="section-drag" draggable="true" data-drag-id="'+sec.id+'" ondragstart="onSectionDragStart(event)" ondragend="onSectionDragEnd(event)" onclick="toggleSectionCollapse(this.parentElement.parentElement.dataset.secId,event)">⋮⋮</span><div class="section-name-wrap"><input class="section-name" value="'+escHtml(sec.name)+'" onchange="renameSection('+sec.id+',this.value)" placeholder="板块名称"></div>'+fmtSecDmgInput(sec.id,sec.damage)+'<div class="section-stats"><div class="sstat"><div class="l">总火价</div><div class="v fire">'+fmtFire(totalFire)+'</div></div><div class="sstat"><div class="l">≈RMB</div><div class="v rmb">'+fmtRmb(totalRmb)+'</div></div></div><button class="section-add-item" onclick="addCurrentToSection('+sec.id+')" id="sapBtn'+sec.id+'" disabled title="先搜索选择物品">＋</button><button class="section-del" onclick="deleteSection('+sec.id+')" title="删除板块">✕</button></div>'+(sec.items.length?'<div id="sec-items-'+sec.id+'" class="section-items"><table class="section-table"><thead><tr><th>物品名称</th><th>类型</th><th>伤害(more)</th><th>数量</th><th class="sortable" data-sort="fire" onclick="handleThClick(this,'+sec.id+')">火价</th><th class="sortable" data-sort="rmb" onclick="handleThClick(this,'+sec.id+')">≈RMB</th><th class="th-fire-dmg sortable" data-sort="fireDmg" onclick="handleThClick(this,'+sec.id+')">百火/伤害</th><th class="th-worth">评估</th><th class="sortable" data-sort="time" onclick="handleThClick(this,'+sec.id+')">更新时间</th><th></th></tr></thead><tbody>'+itemsHtml+moreBtn+'</table></div>':'<div id="sec-items-'+sec.id+'" class="section-items"><div class="empty-section">此板块暂无物品</div></div>')+'</div>';
 }
@@ -777,7 +794,7 @@ function loadMoreSectionItems(secId){
   var visCount=STATE.sectionVisibleItems[secId];
   var visItems=sec.items.slice(0,visCount);
   var hiddenCount=Math.max(0,sec.items.length-visCount);
-  var itemsHtml=visItems.map(function(item){var if2=calcItemFire(item);return'<tr data-item-id="'+escAttr(item.id)+'"><td class="td-name" data-tip="'+(item.last_time?"更新："+fmtT(item.last_time):"无时间戳")+'" onmouseenter="showTooltip(event,this)" onmouseleave="hideTooltip()">'+escHtml(item.name)+'</td><td class="td-type">'+escHtml(item.type||"")+'</td><td><input type="number" class="td-input" value="'+(item.more||0)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',1,this.value);this.blur()}" min="0"></td><td><input type="number" class="td-input td-count" value="'+(item.count||1)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',2,this.value);this.blur()}" min="1"></td><td class="td-fire">'+fmtFire(if2)+'</td><td class="td-rmb">'+fmtRmb(RMB(if2))+'</td><td class="td-fire-dmg">'+fmtFireDmg(item,if2)+'</td><td class="td-worth">'+fmtWorth(item,sec.damage)+'</td><td class="td-time">'+(item.last_time?fmtT(item.last_time):"—")+'</td><td class="td-op"><button class="del-item" onclick="deleteItem('+sec.id+',\''+escAttr(item.id)+'\')" title="移除">✕</button></td></tr>'}).join("");
+  var itemsHtml=visItems.map(function(item){var if2=calcItemFire(item);return'<tr data-item-id="'+escAttr(item.id)+'"><td class="td-name" style="cursor:pointer" data-tip="'+(item.last_time?"更新："+fmtT(item.last_time):"无时间戳")+'" onmouseenter="showTooltip(event,this)" onmouseleave="hideTooltip()" onclick="openHistoryModal(\''+escAttr(item.id)+'\','+sec.id+',\''+escAttr(item.name)+'\')">'+escHtml(item.name)+'</td><td class="td-type">'+escHtml(item.type||"")+'</td><td><input type="number" class="td-input" value="'+(item.more||0)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',1,this.value);this.blur()}" min="0"></td><td><input type="number" class="td-input td-count" value="'+(item.count||1)+'" onkeydown="if(event.keyCode===13){updateItemField('+sec.id+',\''+escAttr(item.id)+'\',2,this.value);this.blur()}" min="1"></td><td class="td-fire">'+fmtFire(if2)+'</td><td class="td-rmb">'+fmtRmb(RMB(if2))+'</td><td class="td-fire-dmg">'+fmtFireDmg(item,if2)+'</td><td class="td-worth">'+fmtWorth(item,sec.damage)+'</td><td class="td-time">'+(item.last_time?fmtT(item.last_time):"—")+'</td><td class="td-op"><button class="del-item" onclick="deleteItem('+sec.id+',\''+escAttr(item.id)+'\')" title="移除">✕</button></td></tr>'}).join("");
   var tbody=el.querySelector("tbody");
   var tfoot=el.querySelector("tfoot");
   if(tbody)tbody.innerHTML=itemsHtml;
@@ -872,7 +889,126 @@ function toast(msg){
   t._timer=setTimeout(function(){t.classList.add("hide")},2500)
 }
 
-var _IMPORT=null;var _importSecOpen={};function openImportModal(){_IMPORT={data:null};_importSecOpen={};document.getElementById("importFileInput").value="";document.getElementById("importFileName").textContent="";document.getElementById("importPreview").style.display="none";document.getElementById("importResult").style.display="none";document.getElementById("confirmImportBtn").disabled=true;document.getElementById("importModal").style.display="flex"}function closeImportModal(){document.getElementById("importModal").style.display="none"}function handleImportFile(input){if(!input.files[0])return;var file=input.files[0];document.getElementById("importFileName").textContent=file.name;var reader=new FileReader();reader.onload=function(e){try{var text=e.target.result;var lines=text.trim().split(/\r?\n/);if(lines.length<2){_showImportResult("error","文件内容不足，至少需要1行数据");return}var parsed=[];for(var i=1;i<lines.length;i++){var cols=lines[i].split(",");if(cols.length<2||!cols[0].trim()||!cols[1].trim())continue;parsed.push({secName:cols[0].trim(),itemName:cols[1].trim(),more:cols.length>2?(parseFloat(cols[2])||0):0,count:cols.length>3?Math.max(1,parseInt(cols[3])||1):1})}if(parsed.length===0){_showImportResult("error","未能解析到有效数据，请检查CSV格式");return}_IMPORT.data=parsed;_showImportPreview(parsed);document.getElementById("confirmImportBtn").disabled=false}catch(err){_showImportResult("error","文件解析失败: "+err.message)}};reader.readAsText(file,"UTF-8")}function _showImportPreview(items){var secMap={};items.forEach(function(item){if(!secMap[item.secName])secMap[item.secName]=[];secMap[item.secName].push(item)});var secNames=Object.keys(secMap).sort();secNames.forEach(function(n){_importSecOpen[n]=true});var totalMatch=0,totalUpdate=0,totalNew=0;secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){totalUpdate++}else if(db){totalMatch++}else{totalNew++}})});var html='<div class="import-stat">共 <span>'+items.length+'</span> 条，分 <span>'+secNames.length+'</span> 板块<span class="import-stat-detail">　🔄覆盖 <span>'+totalUpdate+'</span>　✅新增 <span>'+totalMatch+'</span>　⚠️未匹配 <span>'+totalNew+'</span></span></div>';secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});var safeId="is_"+secName.replace(/[^a-zA-Z0-9]/g,"_");var secMatched=0,secUpdate=0,secNew=0;secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){secUpdate++}else if(db){secMatched++}else{secNew++}});html+='<div class="import-sec-block">';html+='<div class="import-sec-hd" onclick="_toggleImportSec(\''+secName.replace(/'/g,"\\'")+'\')" style="cursor:pointer">';html+='<span class="import-sec-arr" id="'+safeId+'_arr">▼</span>';html+='<span class="import-sec-name">'+escHtml(secName)+'</span>';if(existingSec)html+='<span class="import-exist-badge">已有</span>';html+='<span class="import-sec-count">🔄'+secUpdate+' ✅'+secMatched+' ⚠️'+secNew+'</span></div>';html+='<div class="import-sec-items" id="'+safeId+'_body">';secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});var isUpdate=existingSec&&existingSec.items.some(function(i){return i.name===item.itemName});html+='<div class="import-row">';html+='<span class="import-item-name">'+escHtml(item.itemName)+'</span>';html+='<span class="import-item-meta">MORE <span class="import-meta-num">'+item.more+'</span> &times; <span class="import-meta-num">'+item.count+'</span></span>';if(isUpdate){html+='<span class="import-update">&#10227; 覆盖</span>'}else if(db){html+='<span class="import-ok">&#10003; '+escHtml(db.type||'')+'</span>'}else{html+='<span class="import-miss">&#10007; 未匹配</span>'}html+='</div>'});html+='</div></div>'});document.getElementById("importPreview").innerHTML=html;document.getElementById("importPreview").style.display="block"}function _toggleImportSec(name){var safe="is_"+name.replace(/[^a-zA-Z0-9]/g,"_");var body=document.getElementById(safe+"_body");var arr=document.getElementById(safe+"_arr");if(!body)return;_importSecOpen[name]=!_importSecOpen[name];body.style.display=_importSecOpen[name]?"block":"none";arr.textContent=_importSecOpen[name]?"▼":"&#9658;"}function _showImportResult(type,msg){var el=document.getElementById("importResult");el.className='import-result '+type;el.textContent=msg;el.style.display="block"}function doImportItems(){if(!_IMPORT||!_IMPORT.data||!_IMPORT.data.length)return;var secMap={};STATE.sections.forEach(function(sec){secMap[sec.name]=sec});var newSec=0,updated=0,added=0,unmatched=0;_IMPORT.data.forEach(function(row){var sec=secMap[row.secName];if(!sec){sec={id:Date.now()+Math.random(),name:row.secName,damage:0,items:[]};STATE.sections.push(sec);secMap[row.secName]=sec;newSec++}var existingIdx=sec.items.findIndex(function(i){return i.name===row.itemName});var db=STATE.rawItems.find(function(d){return d.name===row.itemName});if(existingIdx>=0){var existing=sec.items[existingIdx];if(db){existing.price=parseFloat(db.price)||0;existing.type=db.type||"";existing.id=db.item_id||db.物品ID||existing.id}existing.more=row.more;existing.count=row.count;updated++}else{var key=db?(db.item_id||db.物品ID||db.name):(row.itemName);sec.items.push({id:key,name:row.itemName,type:db?(db.type||""):"",price:db?(parseFloat(db.price)||0):0,more:row.more,count:row.count,last_time:null});if(db){added++}else{unmatched++}}});saveSections();var txt="导入完成：🔄覆盖 "+updated+" 条";if(newSec>0)txt+="，新增 "+newSec+" 板块";if(added>0)txt+="，新增 "+added+" 物品（已匹配）";if(unmatched>0)txt+="，⚠️未匹配 "+unmatched+" 条（按CSV原价计入）";_showImportResult("success",txt);document.getElementById("confirmImportBtn").disabled=true;STATE._dirty=null;renderAll(true);setTimeout(closeImportModal,2500)}
+var _IMPORT=null;var _importSecOpen={};function openImportModal(){_IMPORT={data:null};_importSecOpen={};document.getElementById("importFileInput").value="";document.getElementById("importFileName").textContent="";document.getElementById("importPreview").style.display="none";document.getElementById("importResult").style.display="none";document.getElementById("confirmImportBtn").disabled=true;document.getElementById("importModal").style.display="flex"}function closeImportModal(){document.getElementById("importModal").style.display="none"}function handleImportFile(input){if(!input.files[0])return;var file=input.files[0];document.getElementById("importFileName").textContent=file.name;var reader=new FileReader();reader.onload=function(e){try{var text=e.target.result;var lines=text.trim().split(/\r?\n/);if(lines.length<2){_showImportResult("error","文件内容不足，至少需要1行数据");return}var parsed=[];for(var i=1;i<lines.length;i++){var cols=lines[i].split(",");if(cols.length<2||!cols[0].trim()||!cols[1].trim())continue;parsed.push({secName:cols[0].trim(),itemName:cols[1].trim(),more:cols.length>2?(parseFloat(cols[2])||0):0,count:cols.length>3?Math.max(1,parseInt(cols[3])||1):1})}if(parsed.length===0){_showImportResult("error","未能解析到有效数据，请检查CSV格式");return}_IMPORT.data=parsed;_showImportPreview(parsed);document.getElementById("confirmImportBtn").disabled=false}catch(err){_showImportResult("error","文件解析失败: "+err.message)}};reader.readAsText(file,"UTF-8")}function _showImportPreview(items){var secMap={};items.forEach(function(item){if(!secMap[item.secName])secMap[item.secName]=[];secMap[item.secName].push(item)});var secNames=Object.keys(secMap).sort();secNames.forEach(function(n){_importSecOpen[n]=true});var totalMatch=0,totalUpdate=0,totalNew=0;secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){totalUpdate++}else if(db){totalMatch++}else{totalNew++}})});var html='<div class="import-stat">共 <span>'+items.length+'</span> 条，分 <span>'+secNames.length+'</span> 板块<span class="import-stat-detail">　🔄覆盖 <span>'+totalUpdate+'</span>　✅新增 <span>'+totalMatch+'</span>　⚠️未匹配 <span>'+totalNew+'</span></span></div>';secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});var safeId="is_"+secName.replace(/[^a-zA-Z0-9]/g,"_");var secMatched=0,secUpdate=0,secNew=0;secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){secUpdate++}else if(db){secMatched++}else{secNew++}});html+='<div class="import-sec-block">';html+='<div class="import-sec-hd" onclick="_toggleImportSec(\''+secName.replace(/'/g,"\\'")+'\')" style="cursor:pointer">';html+='<span class="import-sec-arr" id="'+safeId+'_arr">▼</span>';html+='<span class="import-sec-name">'+escHtml(secName)+'</span>';if(existingSec)html+='<span class="import-exist-badge">已有</span>';html+='<span class="import-sec-count">🔄'+secUpdate+' ✅'+secMatched+' ⚠️'+secNew+'</span></div>';html+='<div class="import-sec-items" id="'+safeId+'_body">';secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});var isUpdate=existingSec&&existingSec.items.some(function(i){return i.name===item.itemName});html+='<div class="import-row">';html+='<span class="import-item-name">'+escHtml(item.itemName)+'</span>';html+='<span class="import-item-meta">MORE <span class="import-meta-num">'+item.more+'</span> &times; <span class="import-meta-num">'+item.count+'</span></span>';if(isUpdate){html+='<span class="import-update">&#10227; 覆盖</span>'}else if(db){html+='<span class="import-ok">&#10003; '+escHtml(db.type||'')+'</span>'}else{html+='<span class="import-miss">&#10007; 未匹配</span>'}html+='</div>'});html+='</div></div>'});document.getElementById("importPreview").innerHTML=html;document.getElementById("importPreview").style.display="block"}function _toggleImportSec(name){var safe="is_"+name.replace(/[^a-zA-Z0-9]/g,"_");var body=document.getElementById(safe+"_body");var arr=document.getElementById(safe+"_arr");if(!body)return;_importSecOpen[name]=!_importSecOpen[name];body.style.display=_importSecOpen[name]?"block":"none";arr.textContent=_importSecOpen[name]?"▼":"&#9658;"}function _showImportResult(type,msg){var el=document.getElementById("importResult");el.className='import-result '+type;el.textContent=msg;el.style.display="block"}// ========== 火价历史走势弹窗 ==========
+var _hist={chart:null,itemId:null,itemName:null,secId:null,hours:24};
+
+function openHistoryModal(itemId,secId,itemName){
+  _hist.itemId=itemId;_hist.itemName=itemName;_hist.secId=secId;_hist.hours=24;
+  document.querySelectorAll('.m-tab').forEach(function(b){b.classList.remove('active')});
+  document.querySelector('.m-tab').classList.add('active');
+  document.getElementById('historyModalTitle').textContent='📊 '+itemName;
+  document.getElementById('historyChartWrap').style.display='block';
+  document.getElementById('historyEmpty').style.display='none';
+  document.getElementById('historyModal').style.display='flex';
+  fetchHistoryAndDraw();
+}
+
+function closeHistoryModal(){
+  document.getElementById('historyModal').style.display='none';
+  if(_hist.chart){_hist.chart.destroy();_hist.chart=null}
+}
+
+function setHistoryRange(hours,btn){
+  document.querySelectorAll('.m-tab').forEach(function(b){b.classList.remove('active')});
+  btn.classList.add('active');
+  _hist.hours=hours;
+  fetchHistoryAndDraw();
+}
+
+function fetchHistoryAndDraw(){
+  var itemId=_hist.itemId;
+  var mode=STATE.cfg&&STATE.cfg.mode||'赛季普通';
+  var url='/api/db/fire-history?item_id='+encodeURIComponent(itemId)+'&hours='+_hist.hours+'&mode='+encodeURIComponent(mode);
+  fetch(url)
+    .then(function(r){return r.json()})
+    .then(function(d){drawHistoryResult(d.history||[]);})
+    .catch(function(){
+      document.getElementById('historyChartWrap').style.display='none';
+      document.getElementById('historyEmpty').style.display='block';
+      document.getElementById('historyEmpty').textContent='加载失败，请稍后重试';
+    });
+}
+
+function drawHistoryResult(history){
+  if(history.length===0){
+    document.getElementById('historyChartWrap').style.display='none';
+    document.getElementById('historyEmpty').style.display='block';
+    document.getElementById('historyEmpty').textContent='暂无火价历史数据';
+    document.getElementById('historyStats').innerHTML='';
+    return;
+  }
+  document.getElementById('historyChartWrap').style.display='block';
+  document.getElementById('historyEmpty').style.display='none';
+
+  // 计算统计数字
+  var prices=history.map(function(p){return parseFloat(p.fire_price)});
+  var latest=prices[prices.length-1];
+  var first=prices[0];
+  var high=Math.max.apply(null,prices);
+  var low=Math.min.apply(null,prices);
+  var change=latest-first;
+  var changePct=first>0?(change/first*100).toFixed(1):0;
+  var upClass=change>=0?'up':'down';
+  var arrow=change>=0?'↑':'↓';
+  document.getElementById('historyStats').innerHTML=
+    '<div class="m-stat"><div class="l">当前火价</div><div class="v fire">'+latest.toFixed(2)+'</div></div>'+
+    '<div class="m-stat"><div class="l">涨跌</div><div class="v '+upClass+'">'+arrow+' '+Math.abs(change).toFixed(2)+' ('+changePct+'%)</div></div>'+
+    '<div class="m-stat"><div class="l">最高</div><div class="v" style="color:var(--fire)">'+high.toFixed(2)+'</div></div>'+
+    '<div class="m-stat"><div class="l">最低</div><div class="v" style="color:var(--muted)">'+low.toFixed(2)+'</div></div>'+
+    '<div class="m-stat"><div class="l">数据点</div><div class="v" style="color:var(--muted)">'+history.length+'</div></div>';
+  drawHistoryChart(history);
+}
+
+function drawHistoryChart(history){
+  var labels=history.map(function(p){return p.scraped_time});
+  var prices=history.map(function(p){return parseFloat(p.fire_price.toFixed(2))});
+  var minP=Math.min.apply(null,prices),maxP=Math.max.apply(null,prices);
+  var pad=(maxP-minP)*0.1||1;
+
+  if(_hist.chart){_hist.chart.destroy()}
+  var ctx=document.getElementById('historyChart').getContext('2d');
+  _hist.chart=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:labels,
+      datasets:[{
+        label:'火价',
+        data:prices,
+        borderColor:'#f59e0b',
+        backgroundColor:'rgba(245,158,11,0.08)',
+        borderWidth:2,
+        pointRadius:history.length>40?0:4,
+        pointBackgroundColor:'#f59e0b',
+        pointBorderColor:'#13172a',
+        pointBorderWidth:2,
+        fill:true,
+        tension:0.35
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#1a2035',
+          borderColor:'#f59e0b',
+          borderWidth:1,
+          titleColor:'#e2e8f0',
+          bodyColor:'#f59e0b',
+          padding:10,
+          callbacks:{label:function(ctx){return'火价: '+ctx.parsed.y.toFixed(4)}}
+        }
+      },
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#64748b',maxTicksLimit:10,font:{size:11}}},
+        y:{min:minP-pad,max:maxP+pad,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#64748b',font:{size:11},callback:function(v){return v.toFixed(1)}}}
+      }
+    }
+  });
+}
+
+function doImportItems(){if(!_IMPORT||!_IMPORT.data||!_IMPORT.data.length)return;var secMap={};STATE.sections.forEach(function(sec){secMap[sec.name]=sec});var newSec=0,updated=0,added=0,unmatched=0;_IMPORT.data.forEach(function(row){var sec=secMap[row.secName];if(!sec){sec={id:Date.now()+Math.random(),name:row.secName,damage:0,items:[]};STATE.sections.push(sec);secMap[row.secName]=sec;newSec++}var existingIdx=sec.items.findIndex(function(i){return i.name===row.itemName});var db=STATE.rawItems.find(function(d){return d.name===row.itemName});if(existingIdx>=0){var existing=sec.items[existingIdx];if(db){existing.price=parseFloat(db.price)||0;existing.type=db.type||"";existing.id=db.item_id||db.物品ID||existing.id}existing.more=row.more;existing.count=row.count;updated++}else{var key=db?(db.item_id||db.物品ID||db.name):(row.itemName);sec.items.push({id:key,name:row.itemName,type:db?(db.type||""):"",price:db?(parseFloat(db.price)||0):0,more:row.more,count:row.count,last_time:null});if(db){added++}else{unmatched++}}});saveSections();var txt="导入完成：🔄覆盖 "+updated+" 条";if(newSec>0)txt+="，新增 "+newSec+" 板块";if(added>0)txt+="，新增 "+added+" 物品（已匹配）";if(unmatched>0)txt+="，⚠️未匹配 "+unmatched+" 条（按CSV原价计入）";_showImportResult("success",txt);document.getElementById("confirmImportBtn").disabled=true;STATE._dirty=null;renderAll(true);setTimeout(closeImportModal,2500)}
 
 function escHtml(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 function escAttr(s){return(s||"").replace(/'/g,"\\'").replace(/"/g,"&quot;")}
@@ -937,6 +1073,25 @@ init();
 
 </script>
 <!-- 导入装备列表模态框 -->
+<div id="historyModal" class="modal-overlay" style="display:none;z-index:1001">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-header-title" id="historyModalTitle">📊 火价走势</div>
+      <button class="modal-close" onclick="closeHistoryModal()">✕</button>
+    </div>
+    <div class="m-body">
+      <div id="historyStats" class="m-stats"></div>
+      <div class="m-tabs">
+        <button class="m-tab active" onclick="setHistoryRange(24,this)">24小时</button>
+        <button class="m-tab" onclick="setHistoryRange(168,this)">7天</button>
+        <button class="m-tab" onclick="setHistoryRange(720,this)">30天</button>
+      </div>
+      <div id="historyChartWrap"><canvas id="historyChart"></canvas></div>
+      <div id="historyEmpty" class="m-empty" style="display:none">暂无火价历史数据</div>
+    </div>
+  </div>
+</div>
+
 <div id="importModal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">

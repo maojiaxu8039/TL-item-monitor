@@ -128,7 +128,7 @@ def log_fire_price(fire_price_record: dict, mode: str = "赛季普通"):
     cur = conn.cursor()
     scraped_at = int(time.time())
 
-    # fire_per_rmb: 1元人民币对应多少火
+    # fire_per_rmb: 1元人民币对应多少火（用于换算RMB Display，不改变存储逻辑）
     fire_per_rmb = fire_price_record.get("fire_per_rmb", 0)
     if not fire_per_rmb:
         conn.close()
@@ -141,8 +141,8 @@ def log_fire_price(fire_price_record: dict, mode: str = "赛季普通"):
     for row in rows:
         item_id = row["item_id"]
         base_price = row["price"] or 0
-        # 换算：火价 = 基础价格 × fire_per_rmb（1元能买多少火）
-        fire_price = round(base_price * fire_per_rmb, 4)
+        # fire_price = base_price（物品值多少火，直接存储）
+        fire_price = round(base_price, 4)
 
         try:
             cur.execute("""
@@ -194,8 +194,9 @@ def get_fire_price_history(item_id: str, hours: int = 24, mode: str = "赛季普
     """获取指定物品的火价历史（最近 N 小时）"""
     conn = _get_conn()
     cur = conn.cursor()
-
     since = int(time.time()) - hours * 3600
+
+    # 先用 item_id 查
     cur.execute("""
         SELECT fire_price, scraped_at, mode
         FROM fire_price_log
@@ -203,6 +204,18 @@ def get_fire_price_history(item_id: str, hours: int = 24, mode: str = "赛季普
         ORDER BY scraped_at ASC
     """, (item_id, mode, since))
     rows = cur.fetchall()
+
+    # 如果用 item_id 查不到（传进来的是 name 而不是 id），用 name 再查一次
+    if not rows:
+        cur.execute("""
+            SELECT fire_price, scraped_at, mode
+            FROM fire_price_log f
+            INNER JOIN items i ON f.item_id = i.item_id
+            WHERE i.name = ? AND f.mode = ? AND f.scraped_at >= ?
+            ORDER BY f.scraped_at ASC
+        """, (item_id, mode, since))
+        rows = cur.fetchall()
+
     conn.close()
 
     return [
