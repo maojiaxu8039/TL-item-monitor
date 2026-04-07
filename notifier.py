@@ -23,8 +23,6 @@ def _get_notifier():
         # 优先 winotify
         try:
             import winotify
-            toast = winotify.Notification(app_id="TL Monitor", title="test", msg="test")
-            toast.show()
             _notifier = "winotify"
             logger.info("通知方式: winotify")
             return _notifier
