@@ -226,6 +226,7 @@ def _do_fire_scrape():
             logger.warning("火价抓取返回空数据")
     except Exception as e:
         logger.error(f"火价抓取异常: {e}")
+    _schedule_fire_scrape()
 
 
 def _schedule_fire_scrape():
