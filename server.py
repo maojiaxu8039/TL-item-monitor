@@ -4,6 +4,7 @@ TL_item_monitor - 物品火价监控服务（升级版）
 - 配置化：赛季/专家模式、JSON路径、端口
 - 自动抓取火价（每5分钟，可配置）
 - 自动重载JSON（每5分钟，可配置）
+- SQLite 数据持久化（每小时记录火价历史）
 """
 import http.server
 import json
@@ -12,20 +13,26 @@ import sys
 import csv
 import threading
 import logging
-try:
-    from notifier import show_notification
-except ImportError:
-    show_notification = None
-    logger = logging.getLogger(__name__)
-    logger.warning("notifier 模块未安装，系统通知将不可用")
-
 import time
-import logging
 import urllib.parse
 import webbrowser
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
+try:
+    from notifier import show_notification
+except ImportError:
+    show_notification = None
+
+try:
+    from database import init_db, upsert_items, log_fire_price
+    from database import get_items, get_fire_price_history, get_latest_fire_prices, get_stats
+    DB_AVAILABLE = True
+except Exception as e:
+    DB_AVAILABLE = False
+    log = logging.getLogger(__name__)
+    log.warning(f"database 模块加载失败: {e}")
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = Path(sys._MEIPASS)
@@ -33,19 +40,16 @@ else:
     BASE_DIR = Path(__file__).parent
 SKILL_DIR = BASE_DIR
 
-# 尝试导入yaml配置
 try:
     import yaml
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
 
-# ========== 路径配置 ==========
 SKILL_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / "config.yaml"
 DEFAULT_ITEMS_FILE = BASE_DIR / "data" / "items.json"
 
-# ========== 默认配置 ==========
 DEFAULT_CONFIG = {
     "fire_price": {
         "mode": "赛季普通",
@@ -66,7 +70,6 @@ DEFAULT_CONFIG = {
     }
 }
 
-# ========== 日志配置 ==========
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -78,9 +81,7 @@ logging.basicConfig(
 logger = logging.getLogger("tl_monitor")
 
 
-# ========== 配置管理 ==========
 def load_config() -> dict:
-    """加载 config.yaml，缺失则使用默认配置"""
     if not YAML_AVAILABLE:
         logger.warning("PyYAML 未安装，使用默认配置")
         return DEFAULT_CONFIG.copy()
@@ -93,7 +94,6 @@ def load_config() -> dict:
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
-        # 合并默认配置
         merged = DEFAULT_CONFIG.copy()
         for k, v in (cfg or {}).items():
             if k in merged and isinstance(merged[k], dict) and isinstance(v, dict):
@@ -108,7 +108,6 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict):
-    """保存配置到 config.yaml"""
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -117,24 +116,23 @@ def save_config(cfg: dict):
         logger.error(f"配置保存失败: {e}")
 
 
-# ========== 内存状态 ==========
 class State:
     def __init__(self):
-        self.fire_price: float = 100.0  # 元/万火
-        self.fire_price_record: dict = {}  # 最新原始记录
-        self.fire_price_mode: str = "专家"
-        self.last_fire_scrape: str = ""  # 上次抓取时间
-        self.items_data: list = []  # 物品列表
-        self.notified_ids: set = set()  # 已通知过的物品ID
-        self.prev_fire_price: float = 0.0  # 上次火价
-        self.items_file_path: str = ""  # 当前JSON路径
-        self.last_items_reload: str = ""  # 上次重载时间
+        self.fire_price: float = 100.0
+        self.fire_price_record: dict = {}
+        self.fire_price_mode: str = "赛季普通"
+        self.last_fire_scrape: str = ""
+        self.items_data: list = []
+        self.items_ids: list = []  # item_id list aligned with items_data
+        self.notified_ids: set = set()
+        self.prev_fire_price: float = 0.0
+        self.items_file_path: str = ""
+        self.last_items_reload: str = ""
         self.scrape_timer: threading.Timer = None
         self.reload_timer: threading.Timer = None
         self.lock = threading.Lock()
 
     def reload_items(self, path: str = ""):
-        """重新加载物品JSON"""
         with self.lock:
             target = path or self.items_file_path or _config["items"].get("json_path", str(DEFAULT_ITEMS_FILE))
             try:
@@ -145,11 +143,14 @@ class State:
                 with open(expanded, "r", encoding="utf-8") as f:
                     raw = json.load(f)
                 if isinstance(raw, dict):
+                    self.items_ids = list(raw.keys())  # save keys as item_ids
                     items = list(raw.values())
                 elif isinstance(raw, list):
                     items = raw
+                    self.items_ids = [item.get("id") or item.get("item_id") for item in items]
                 else:
                     items = []
+                    self.items_ids = []
                 self.items_data = items
                 self.items_file_path = target
                 self.last_items_reload = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -160,21 +161,21 @@ class State:
                 return False
 
 
+if DB_AVAILABLE:
+    init_db()
+
 _state = State()
 _config = load_config()
 _scrape_semaphore = threading.Semaphore(1)
 
 
-# ========== 火价抓取（后台线程）==========
 def _do_worth_check():
-    """服务端 worth 检查：监控火价异常波动并发送通知"""
     if show_notification is None:
         return
     with _state.lock:
         fp = _state.fire_price
         rec = dict(_state.fire_price_record)
         notified = set(_state.notified_ids)
-    # 通知标记：火价变化超过 10% 时提醒
     prev_fp = _state.prev_fire_price
     if prev_fp and fp:
         change = abs(fp - prev_fp) / prev_fp * 100
@@ -190,12 +191,11 @@ def _do_worth_check():
                     icon=str(BASE_DIR / "logo.ico")
                 )
             except Exception as e:
-                logger = logging.getLogger(__name__)
                 logger.warning(f"通知失败: {e}")
     _state.prev_fire_price = fp
 
+
 def _schedule_worth_check(interval=3600):
-    """定时执行 worth 检查"""
     def _run():
         _do_worth_check()
         with _state.lock:
@@ -206,8 +206,8 @@ def _schedule_worth_check(interval=3600):
             _state.reload_timer.start()
     _run()
 
+
 def _do_fire_scrape():
-    """执行一次火价抓取"""
     try:
         from scraper import fetch_fire_price
         mode = _config["fire_price"]["mode"]
@@ -226,7 +226,6 @@ def _do_fire_scrape():
 
 
 def _schedule_fire_scrape():
-    """调度下次火价抓取"""
     cfg = _config["fire_price"]
     if _state.scrape_timer:
         _state.scrape_timer.cancel()
@@ -241,7 +240,6 @@ def _schedule_fire_scrape():
 
 
 def _schedule_items_reload():
-    """调度下次JSON重载"""
     cfg = _config["items"]
     if _state.reload_timer:
         _state.reload_timer.cancel()
@@ -256,13 +254,38 @@ def _schedule_items_reload():
 
 
 def _do_items_reload():
-    """执行一次JSON重载"""
-    _state.reload_items()
+    ok = _state.reload_items()
+    if ok and DB_AVAILABLE:
+        added, skipped = upsert_items(_state.items_data, _state.items_ids)
+        logger.info(f"数据库物品同步: 新增 {added}，跳过 {skipped}")
     _schedule_items_reload()
 
 
+# ---- 数据库每小时火价入库调度 ----
+_db_log_timer: threading.Timer = None
 
-# ========== HTTP Handler ==========
+
+def _do_hourly_db_log():
+    """每小时执行一次火价记录入库"""
+    global _db_log_timer
+    if not DB_AVAILABLE:
+        return
+    try:
+        with _state.lock:
+            data = dict(_state.fire_price_record)
+            mode = _state.fire_price_mode
+        if data:
+            log_fire_price(data, mode)
+    except Exception as e:
+        logger.error(f"火价入库异常: {e}")
+    if _db_log_timer:
+        _db_log_timer.cancel()
+    _db_log_timer = threading.Timer(3600, _do_hourly_db_log)
+    _db_log_timer.daemon = True
+    _db_log_timer.start()
+    logger.info("火价数据库记录调度: 1小时后执行")
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -282,8 +305,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def do_GET(self):
-        logger = logging.getLogger(__name__)
-        logger.info(f"[do_GET] self.path={repr(self.path)}")
         u = urllib.parse.urlparse(self.path)
         path = u.path
         query = u.query
@@ -316,18 +337,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/notify":
-            # 浏览器调用此接口发送原生系统通知（Win/macOS）
-            logger = logging.getLogger(__name__)
-            logger.info(f"[notify] path={repr(path)}, query={repr(query)}")
             params = urllib.parse.parse_qs(query)
-            logger.info(f"[notify] params={params}")
             title = params.get("title", ["TL Monitor"])[0]
             message = params.get("message", [""])[0]
             icon_path = params.get("icon", [None])[0] or None
-            # 将相对路径转为绝对路径
             if icon_path:
                 icon_path = str(BASE_DIR / icon_path.lstrip('/'))
-                logger.info(f"[notify] icon resolved to: {icon_path}, exists={os.path.exists(icon_path)}")
             if show_notification:
                 try:
                     show_notification(title=title, message=message, duration="long", icon=icon_path)
@@ -367,6 +382,46 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 threading.Thread(target=_do_fire_scrape, daemon=True).start()
                 self.send_json({"ok": True, "message": "火价抓取已在后台启动"})
+            return
+
+        # ---- 数据库相关 API ----
+        if path == "/api/db/stats" and DB_AVAILABLE:
+            self.send_json(get_stats())
+            return
+
+        if path == "/api/db/items" and DB_AVAILABLE:
+            params = urllib.parse.parse_qs(query)
+            page = int(params.get("page", [1])[0])
+            page_size = int(params.get("page_size", [100])[0])
+            keyword = params.get("keyword", [""])[0]
+            self.send_json(get_items(page=page, page_size=page_size, keyword=keyword))
+            return
+
+        if path == "/api/db/fire-history" and DB_AVAILABLE:
+            params = urllib.parse.parse_qs(query)
+            item_id = params.get("item_id", [""])[0]
+            hours = int(params.get("hours", [24])[0])
+            mode = params.get("mode", [_state.fire_price_mode])[0]
+            if not item_id:
+                self.send_json({"error": "item_id is required"}, 400)
+                return
+            self.send_json({
+                "item_id": item_id,
+                "hours": hours,
+                "mode": mode,
+                "history": get_fire_price_history(item_id, hours=hours, mode=mode)
+            })
+            return
+
+        if path == "/api/db/fire-latest" and DB_AVAILABLE:
+            params = urllib.parse.parse_qs(query)
+            mode = params.get("mode", [_state.fire_price_mode])[0]
+            self.send_json(get_latest_fire_prices(mode=mode))
+            return
+
+        if path == "/api/db/trigger-log" and DB_AVAILABLE:
+            threading.Thread(target=_do_hourly_db_log, daemon=True).start()
+            self.send_json({"ok": True, "message": "火价入库任务已触发"})
             return
 
         # Static file
@@ -417,7 +472,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if "items" in cfg:
                     for k, v in cfg["items"].items():
                         _config["items"][k] = v
-                    # 立即重载 JSON
                     _state.reload_items(_config["items"].get("json_path", str(DEFAULT_ITEMS_FILE)))
                 if "server" in cfg:
                     for k, v in cfg["server"].items():
@@ -427,31 +481,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"status": "error", "message": str(e)})
             return
-        # 其他 POST 重定向到首页
         self.send_response(302)
         self.send_header("Location", "/")
         self.end_headers()
 
 
-# ========== 启动 ==========
 def run():
     global _config, _state
     _config = load_config()
     PORT = _config["server"].get("port", 19877)
 
-    # 初始加载
     _state.fire_price_mode = _config["fire_price"].get("mode", "赛季普通")
-    # 确保 items_file_path 从配置加载
     _state.items_file_path = _config["items"].get("json_path", str(DEFAULT_ITEMS_FILE))
     _state.reload_items()
 
-    # 后台执行首次火价抓取（非阻塞）
+    # 数据库初始化物品同步
+    if DB_AVAILABLE:
+        added, skipped = upsert_items(_state.items_data, _state.items_ids)
+        logger.info(f"启动时数据库物品同步: 新增 {added}，跳过 {skipped}")
+
     logger.info("后台启动火价抓取...")
     threading.Thread(target=_do_fire_scrape, daemon=True).start()
 
-    # 调度定时任务
     _schedule_fire_scrape()
     _schedule_items_reload()
+
+    # 启动每小时火价入库调度
+    if DB_AVAILABLE:
+        _do_hourly_db_log()
 
     server = http.server.HTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://localhost:{PORT}"
@@ -460,13 +517,12 @@ def run():
     logger.info(f"   抓取间隔: {_config['fire_price']['scrape_interval']}秒")
     logger.info(f"   JSON路径: {_state.items_file_path}")
     logger.info(f"   JSON重载间隔: {_config['items']['reload_interval']}秒")
+    logger.info(f"   数据库: {'已启用' if DB_AVAILABLE else '未启用'}")
 
-    # 自动打开浏览器
     def _open_browser():
         time.sleep(1.5)
         try:
             if sys.platform == "win32":
-                # Windows: 优先用 Chrome，不弹出黑窗口
                 chrome_paths = [
                     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -476,7 +532,6 @@ def run():
                         subprocess.Popen([path, url], start_new_session=True)
                         logger.info(f"已通过 Chrome 打开浏览器: {url}")
                         return
-                # fallback: 用默认浏览器
                 webbrowser.open(url)
             else:
                 webbrowser.open(url)

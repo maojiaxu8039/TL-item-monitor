@@ -265,6 +265,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
   <div class="status-item"><span>模式:</span><span class="status-val" id="cfgModeDisplay">专家</span></div>
   <div class="status-item"><span>物品数据库路径:</span><span class="status-val" id="cfgPathDisplay">内置</span></div>
   <div class="status-item"><span>🔔</span><span class="status-val" id="notifBadge">通知:待开启</span></div>
+  <div class="status-item"><span>🗄️</span><span class="status-val" id="dbStatus">数据库:--</span></div>
 </div>
 
 <div class="search-bar">
@@ -382,6 +383,14 @@ function updateStatusBar(){
   document.getElementById("lastItemsTime").textContent=c.last_items_reload||"--";
   var df=document.getElementById("dotFire");
   if(c.last_fire_scrape){var t=new Date(c.last_fire_scrape);var age=(Date.now()-t)/1000;df.className="status-dot "+(age<600?"ok":age<1800?"warn":"off")}
+  // 数据库状态
+  var ds=document.getElementById("dbStatus");
+  fetch("/api/db/stats").then(r=>r.json()).then(d=>{
+    if(d.item_count!==undefined){
+      ds.textContent="数据库:"+d.item_count+"物品/"+d.log_count+"记录";
+      ds.style.color="var(--green)";
+    }
+  }).catch(function(){ds.textContent="数据库:未连接";ds.style.color="var(--red)"});
 }
 
 function toggleSettings(){document.getElementById("settingsPanel").classList.toggle("show")}
