@@ -377,8 +377,11 @@ async function init(){
   }
   // 每30秒检测一次评估=good的物品
   setInterval(checkWorthNotifications,30000);
-  // 每5分钟自动刷新火价（与服务器 scrape_interval 对齐）
-  setInterval(fetchFirePrice, 300000);
+  // 每30秒轮询服务器，火价和物品数据有变化时自动更新
+  setInterval(pollServerUpdates,30000);
+  // 初始化轮询基准值
+  _lastFirePrice=STATE.firePrice||0;
+  _lastItemsCount=STATE.rawItems.length||0;
 }
 
 
@@ -472,6 +475,7 @@ async function fetchFirePrice(){
     document.getElementById("fpInput").value=STATE.firePrice;
     var dot=document.getElementById("dotFire");if(dot)dot.className="status-dot ok";
     document.getElementById("lastFireTime").textContent=STATE.cfg.last_fire_scrape;
+    _lastFirePrice=STATE.firePrice||0;
   }catch(e){var dot=document.getElementById("dotFire");if(dot)dot.className="status-dot warn";document.getElementById("lastFireTime").textContent="加载失败"}
 }
 
@@ -519,6 +523,58 @@ async function fetchItems(){
     var dot=document.getElementById("dotItems");if(dot)dot.className="status-dot ok";
     updateStatusBar()
   }catch(e){var dot=document.getElementById("dotItems");if(dot)dot.className="status-dot warn";document.getElementById("lastItemsTime").textContent="加载失败";toast("物品库加载失败，请检查网络")}
+}
+
+// 每30秒轮询服务器，火价或物品数据有变化时自动更新页面
+async function pollServerUpdates(){
+  try{
+    // 检查火价是否有变化
+    var fr=await fetch("/api/fire-price",{cache:"no-store"});
+    if(fr.ok){
+      var fd=await fr.json();
+      var newPrice=parseFloat(fd.price_per_wan)||0;
+      if(newPrice&&newPrice!==_lastFirePrice){
+        STATE.firePrice=newPrice;
+        STATE.cfg.last_fire_scrape=fd.record_time||new Date().toLocaleString("zh-CN");
+        document.getElementById("fpDisplay").textContent=FS(STATE.firePrice,2);
+        document.getElementById("fpInput").value=STATE.firePrice;
+        document.getElementById("lastFireTime").textContent=STATE.cfg.last_fire_scrape;
+        var dot=document.getElementById("dotFire");if(dot)dot.className="status-dot ok";
+        _lastFirePrice=newPrice;
+      }
+    }
+  }catch(e){}
+  try{
+    // 检查物品数据是否有变化
+    var ir=await fetch("/api/items",{cache:"no-store"});
+    if(ir.ok){
+      var id=await ir.json();
+      var newCount=id.count||0;
+      if(newCount!==_lastItemsCount){
+        STATE.rawItems=id.items||[];
+        _lastItemsCount=newCount;
+        STATE.cfg.last_items_reload=new Date().toLocaleString("zh-CN");
+        var dot=document.getElementById("dotItems");if(dot)dot.className="status-dot ok";
+        document.getElementById("lastItemsTime").textContent=STATE.cfg.last_items_reload;
+        // 重新渲染各板块的物品火价（只更新价格，不重置用户输入）
+        STATE.sections.forEach(function(sec){
+          sec.items.forEach(function(it){
+            var db=STATE.rawItems.find(function(r){return r.item_id===it.id||r.物品ID===it.id||r.name===it.name});
+            if(db){
+              var newPrice=parseFloat(db.price)||0;
+              if(newPrice!==it.price){
+                it.price=newPrice;
+                it.last_time=db.last_time||null;
+              }
+            }
+          });
+        });
+        saveSections();
+        renderAll(false);
+        checkWorthNotifications();
+      }
+    }
+  }catch(e){}
 }
 
 document.getElementById("fpInput").addEventListener("change",function(){
@@ -901,7 +957,7 @@ function toast(msg){
   t._timer=setTimeout(function(){t.classList.add("hide")},2500)
 }
 
-var _IMPORT=null;var _importSecOpen={};function openImportModal(){_IMPORT={data:null};_importSecOpen={};document.getElementById("importFileInput").value="";document.getElementById("importFileName").textContent="";document.getElementById("importPreview").style.display="none";document.getElementById("importResult").style.display="none";document.getElementById("confirmImportBtn").disabled=true;document.getElementById("importModal").style.display="flex"}function closeImportModal(){document.getElementById("importModal").style.display="none"}function handleImportFile(input){if(!input.files[0])return;var file=input.files[0];document.getElementById("importFileName").textContent=file.name;var reader=new FileReader();reader.onload=function(e){try{var text=e.target.result;var lines=text.trim().split(/\r?\n/);if(lines.length<2){_showImportResult("error","文件内容不足，至少需要1行数据");return}var parsed=[];for(var i=1;i<lines.length;i++){var cols=lines[i].split(",");if(cols.length<2||!cols[0].trim()||!cols[1].trim())continue;parsed.push({secName:cols[0].trim(),itemName:cols[1].trim(),more:cols.length>2?(parseFloat(cols[2])||0):0,count:cols.length>3?Math.max(1,parseInt(cols[3])||1):1})}if(parsed.length===0){_showImportResult("error","未能解析到有效数据，请检查CSV格式");return}_IMPORT.data=parsed;_showImportPreview(parsed);document.getElementById("confirmImportBtn").disabled=false}catch(err){_showImportResult("error","文件解析失败: "+err.message)}};reader.readAsText(file,"UTF-8")}function _showImportPreview(items){var secMap={};items.forEach(function(item){if(!secMap[item.secName])secMap[item.secName]=[];secMap[item.secName].push(item)});var secNames=Object.keys(secMap).sort();secNames.forEach(function(n){_importSecOpen[n]=true});var totalMatch=0,totalUpdate=0,totalNew=0;secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){totalUpdate++}else if(db){totalMatch++}else{totalNew++}})});var html='<div class="import-stat">共 <span>'+items.length+'</span> 条，分 <span>'+secNames.length+'</span> 板块<span class="import-stat-detail">　🔄覆盖 <span>'+totalUpdate+'</span>　✅新增 <span>'+totalMatch+'</span>　⚠️未匹配 <span>'+totalNew+'</span></span></div>';secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});var safeId="is_"+secName.replace(/[^a-zA-Z0-9]/g,"_");var secMatched=0,secUpdate=0,secNew=0;secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){secUpdate++}else if(db){secMatched++}else{secNew++}});html+='<div class="import-sec-block">';html+='<div class="import-sec-hd" onclick="_toggleImportSec(\''+secName.replace(/'/g,"\\'")+'\')" style="cursor:pointer">';html+='<span class="import-sec-arr" id="'+safeId+'_arr">▼</span>';html+='<span class="import-sec-name">'+escHtml(secName)+'</span>';if(existingSec)html+='<span class="import-exist-badge">已有</span>';html+='<span class="import-sec-count">🔄'+secUpdate+' ✅'+secMatched+' ⚠️'+secNew+'</span></div>';html+='<div class="import-sec-items" id="'+safeId+'_body">';secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});var isUpdate=existingSec&&existingSec.items.some(function(i){return i.name===item.itemName});html+='<div class="import-row">';html+='<span class="import-item-name">'+escHtml(item.itemName)+'</span>';html+='<span class="import-item-meta">MORE <span class="import-meta-num">'+item.more+'</span> &times; <span class="import-meta-num">'+item.count+'</span></span>';if(isUpdate){html+='<span class="import-update">&#10227; 覆盖</span>'}else if(db){html+='<span class="import-ok">&#10003; '+escHtml(db.type||'')+'</span>'}else{html+='<span class="import-miss">&#10007; 未匹配</span>'}html+='</div>'});html+='</div></div>'});document.getElementById("importPreview").innerHTML=html;document.getElementById("importPreview").style.display="block"}function _toggleImportSec(name){var safe="is_"+name.replace(/[^a-zA-Z0-9]/g,"_");var body=document.getElementById(safe+"_body");var arr=document.getElementById(safe+"_arr");if(!body)return;_importSecOpen[name]=!_importSecOpen[name];body.style.display=_importSecOpen[name]?"block":"none";arr.textContent=_importSecOpen[name]?"▼":"&#9658;"}function _showImportResult(type,msg){var el=document.getElementById("importResult");el.className='import-result '+type;el.textContent=msg;el.style.display="block"}// ========== 火价历史走势弹窗 ==========
+var _IMPORT=null;var _importSecOpen={};var _lastFirePrice=0;var _lastItemsCount=0;function openImportModal(){_IMPORT={data:null};_importSecOpen={};document.getElementById("importFileInput").value="";document.getElementById("importFileName").textContent="";document.getElementById("importPreview").style.display="none";document.getElementById("importResult").style.display="none";document.getElementById("confirmImportBtn").disabled=true;document.getElementById("importModal").style.display="flex"}function closeImportModal(){document.getElementById("importModal").style.display="none"}function handleImportFile(input){if(!input.files[0])return;var file=input.files[0];document.getElementById("importFileName").textContent=file.name;var reader=new FileReader();reader.onload=function(e){try{var text=e.target.result;var lines=text.trim().split(/\r?\n/);if(lines.length<2){_showImportResult("error","文件内容不足，至少需要1行数据");return}var parsed=[];for(var i=1;i<lines.length;i++){var cols=lines[i].split(",");if(cols.length<2||!cols[0].trim()||!cols[1].trim())continue;parsed.push({secName:cols[0].trim(),itemName:cols[1].trim(),more:cols.length>2?(parseFloat(cols[2])||0):0,count:cols.length>3?Math.max(1,parseInt(cols[3])||1):1})}if(parsed.length===0){_showImportResult("error","未能解析到有效数据，请检查CSV格式");return}_IMPORT.data=parsed;_showImportPreview(parsed);document.getElementById("confirmImportBtn").disabled=false}catch(err){_showImportResult("error","文件解析失败: "+err.message)}};reader.readAsText(file,"UTF-8")}function _showImportPreview(items){var secMap={};items.forEach(function(item){if(!secMap[item.secName])secMap[item.secName]=[];secMap[item.secName].push(item)});var secNames=Object.keys(secMap).sort();secNames.forEach(function(n){_importSecOpen[n]=true});var totalMatch=0,totalUpdate=0,totalNew=0;secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){totalUpdate++}else if(db){totalMatch++}else{totalNew++}})});var html='<div class="import-stat">共 <span>'+items.length+'</span> 条，分 <span>'+secNames.length+'</span> 板块<span class="import-stat-detail">　🔄覆盖 <span>'+totalUpdate+'</span>　✅新增 <span>'+totalMatch+'</span>　⚠️未匹配 <span>'+totalNew+'</span></span></div>';secNames.forEach(function(secName){var secItems=secMap[secName];var existingSec=STATE.sections.find(function(s){return s.name===secName});var safeId="is_"+secName.replace(/[^a-zA-Z0-9]/g,"_");var secMatched=0,secUpdate=0,secNew=0;secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});if(existingSec&&existingSec.items.some(function(i){return i.name===item.itemName})){secUpdate++}else if(db){secMatched++}else{secNew++}});html+='<div class="import-sec-block">';html+='<div class="import-sec-hd" onclick="_toggleImportSec(\''+secName.replace(/'/g,"\\'")+'\')" style="cursor:pointer">';html+='<span class="import-sec-arr" id="'+safeId+'_arr">▼</span>';html+='<span class="import-sec-name">'+escHtml(secName)+'</span>';if(existingSec)html+='<span class="import-exist-badge">已有</span>';html+='<span class="import-sec-count">🔄'+secUpdate+' ✅'+secMatched+' ⚠️'+secNew+'</span></div>';html+='<div class="import-sec-items" id="'+safeId+'_body">';secItems.forEach(function(item){var db=STATE.rawItems.find(function(d){return d.name===item.itemName});var isUpdate=existingSec&&existingSec.items.some(function(i){return i.name===item.itemName});html+='<div class="import-row">';html+='<span class="import-item-name">'+escHtml(item.itemName)+'</span>';html+='<span class="import-item-meta">MORE <span class="import-meta-num">'+item.more+'</span> &times; <span class="import-meta-num">'+item.count+'</span></span>';if(isUpdate){html+='<span class="import-update">&#10227; 覆盖</span>'}else if(db){html+='<span class="import-ok">&#10003; '+escHtml(db.type||'')+'</span>'}else{html+='<span class="import-miss">&#10007; 未匹配</span>'}html+='</div>'});html+='</div></div>'});document.getElementById("importPreview").innerHTML=html;document.getElementById("importPreview").style.display="block"}function _toggleImportSec(name){var safe="is_"+name.replace(/[^a-zA-Z0-9]/g,"_");var body=document.getElementById(safe+"_body");var arr=document.getElementById(safe+"_arr");if(!body)return;_importSecOpen[name]=!_importSecOpen[name];body.style.display=_importSecOpen[name]?"block":"none";arr.textContent=_importSecOpen[name]?"▼":"&#9658;"}function _showImportResult(type,msg){var el=document.getElementById("importResult");el.className='import-result '+type;el.textContent=msg;el.style.display="block"}// ========== 火价历史走势弹窗 ==========
 var _hist={chart:null,itemId:null,itemName:null,secId:null,hours:24};
 
 function openHistoryModal(itemId,secId,itemName){
