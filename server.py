@@ -222,6 +222,13 @@ def _do_fire_scrape():
                 _state.fire_price_mode = mode
                 _state.last_fire_scrape = data["ts"]
             logger.info(f"火价已更新: {data['ten_k']:.4f} 元/万火 [{mode}]")
+            # 立即入库（不依赖每小时定时器，确保每次抓成都记录）
+            if DB_AVAILABLE:
+                try:
+                    log_fire_price_record(data, mode)
+                    log_fire_price(data, mode)
+                except Exception as e2:
+                    logger.error(f"火价入库异常: {e2}")
         else:
             logger.warning("火价抓取返回空数据")
     except Exception as e:
@@ -273,16 +280,20 @@ def _do_hourly_db_log():
     """每小时执行一次火价记录入库"""
     global _db_log_timer
     if not DB_AVAILABLE:
+        logger.warning("火价入库跳过: 数据库不可用")
         return
     try:
         with _state.lock:
             data = dict(_state.fire_price_record)
             mode = _state.fire_price_mode
+        logger.info(f"火价入库调度触发: fire_per_rmb={data.get('fire_per_rmb', 0)}, ten_k={data.get('ten_k', 0)}")
         if data:
             # 记录火价本身（元/万火、1元=多少火等）
             log_fire_price_record(data, mode)
             # 记录所有物品当前价格
             log_fire_price(data, mode)
+        else:
+            logger.warning("火价入库跳过: 无火价数据")
     except Exception as e:
         logger.error(f"火价入库异常: {e}")
     if _db_log_timer:

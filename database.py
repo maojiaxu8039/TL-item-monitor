@@ -132,7 +132,9 @@ def log_fire_price(fire_price_record: dict, mode: str = "赛季普通"):
 
     conn = _get_conn()
     cur = conn.cursor()
-    scraped_at = int(time.time())
+    # 规范为整点时间（分钟=0，秒=0）
+    now = int(time.time())
+    scraped_at = (now // 3600) * 3600
 
     # fire_per_rmb: 1元人民币对应多少火（用于换算RMB Display，不改变存储逻辑）
     fire_per_rmb = fire_price_record.get("fire_per_rmb", 0)
@@ -161,7 +163,7 @@ def log_fire_price(fire_price_record: dict, mode: str = "赛季普通"):
 
     conn.commit()
     conn.close()
-    logger.info(f"火价记录写入完成: {inserted} 条 [{mode}]")
+    logger.info(f"火价记录写入完成: {inserted} 条 [{mode}] [{datetime.fromtimestamp(scraped_at).strftime('%Y-%m-%d %H:%M')}]")
 
 
 def log_fire_price_record(fire_price_record: dict, mode: str = "赛季普通"):
@@ -174,7 +176,11 @@ def log_fire_price_record(fire_price_record: dict, mode: str = "赛季普通"):
 
     conn = _get_conn()
     cur = conn.cursor()
-    scraped_at = int(time.time())
+    # 规范为整点时间（分钟=0，秒=0）
+    now = int(time.time())
+    scraped_at = (now // 3600) * 3600
+    # 整点格式化字符串（用于前端显示）
+    ts = datetime.fromtimestamp(scraped_at).strftime("%Y-%m-%d %H:00")
 
     try:
         cur.execute("""
@@ -188,10 +194,11 @@ def log_fire_price_record(fire_price_record: dict, mode: str = "赛季普通"):
             fire_price_record.get("increase_ratio", 0),
             fire_price_record.get("trading_volume", ""),
             fire_price_record.get("source", ""),
-            fire_price_record.get("ts", ""),
+            ts,
             scraped_at,
         ))
-        logger.info(f"火价记录(ten_k)写入完成: {fire_price_record.get('ten_k')} 元/万火 [{mode}]")
+        conn.commit()
+        logger.info(f"火价记录(ten_k)写入完成: {fire_price_record.get('ten_k')} 元/万火 [{mode}] [{ts}]")
     except Exception as e:
         logger.error(f"写入火价记录失败: {e}")
     finally:
@@ -260,7 +267,7 @@ def get_fire_price_history(item_id: str, hours: int = 24, mode: str = "赛季普
         {
             "fire_price": r["fire_price"],
             "scraped_at": r["scraped_at"],
-            "scraped_time": datetime.fromtimestamp(r["scraped_at"]).strftime("%Y-%m-%d %H:%M"),
+            "scraped_time": datetime.fromtimestamp(r["scraped_at"]).strftime("%m-%d %H:00"),
             "mode": r["mode"],
         }
         for r in rows
@@ -315,7 +322,7 @@ def get_fire_record_history(hours: int = 24, mode: str = "赛季普通") -> list
             "source": r["source"],
             "ts": r["ts"],
             "scraped_at": r["scraped_at"],
-            "scraped_time": datetime.fromtimestamp(r["scraped_at"]).strftime("%Y-%m-%d %H:%M"),
+            "scraped_time": datetime.fromtimestamp(r["scraped_at"]).strftime("%m-%d %H:00"),
             "mode": r["mode"],
         }
         for r in rows
@@ -336,7 +343,7 @@ def get_stats() -> dict:
     return {
         "item_count": item_count,
         "log_count": log_count,
-        "last_log_at": datetime.fromtimestamp(last_log).strftime("%Y-%m-%d %H:%M") if last_log else None,
+        "last_log_at": datetime.fromtimestamp(last_log).strftime("%m-%d %H:00") if last_log else None,
         "db_path": str(DB_PATH),
     }
 

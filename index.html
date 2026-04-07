@@ -219,7 +219,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
 #historyModal .m-tab{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:13px;color:var(--muted);transition:all .2s}
 #historyModal .m-tab:hover{color:var(--text);border-color:var(--muted)}
 #historyModal .m-tab.active{background:var(--fire);color:#000;border-color:var(--fire);font-weight:600}
-#historyModal .m-chart{width:100%;height:320px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px}
+#historyModal .m-chart{width:100%;height:100%;max-height:320px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;box-sizing:border-box}
 #historyModal .m-empty{text-align:center;color:var(--muted);padding:48px;font-size:14px}
 #historyModal .m-stats{display:flex;gap:20px;padding:0 4px}
 #historyModal .m-stat{display:flex;flex-direction:column;gap:2px}
@@ -243,6 +243,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
 #fireHistoryModal .m-stat .v.up{color:var(--rmb)}
 #fireHistoryModal .m-stat .v.down{color:var(--danger)}
 #fireHistoryModal .modal-box{max-width:640px;width:95vw}
+#fireHistoryChartWrap{width:100%;height:100%;max-height:320px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;box-sizing:border-box}
 </style>
 <script src="chart.umd.min.js"></script>
 </head>
@@ -1065,7 +1066,7 @@ function drawHistoryChart(history){
           titleColor:'#e2e8f0',
           bodyColor:'#f59e0b',
           padding:10,
-          callbacks:{label:function(ctx){return'火价: '+ctx.parsed.y.toFixed(4)}}
+          callbacks:{label:function(ctx){return'火价: '+ctx.parsed.y.toFixed(2)}}
         }
       },
       scales:{
@@ -1191,10 +1192,10 @@ function drawFireHistoryResult(history){
   var arrow=change>=0?'↑':'↓';
   var firePerRmb=history.length>0?history[history.length-1].fire_per_rmb:0;
   document.getElementById('fireHistoryStats').innerHTML=
-    '<div class="m-stat"><div class="l">当前火价</div><div class="v fire">'+(latest>0?latest.toFixed(4)+' 元/万火':'--')+'</div></div>'+
-    '<div class="m-stat"><div class="l">涨跌</div><div class="v '+upClass+'">'+arrow+' '+Math.abs(change).toFixed(4)+' ('+changePct+'%)</div></div>'+
-    '<div class="m-stat"><div class="l">最高</div><div class="v" style="color:var(--fire)">'+(high>0?high.toFixed(4):'--')+'</div></div>'+
-    '<div class="m-stat"><div class="l">最低</div><div class="v" style="color:var(--muted)">'+(low>0?low.toFixed(4):'--')+'</div></div>'+
+    '<div class="m-stat"><div class="l">当前火价</div><div class="v fire">'+(latest>0?latest.toFixed(2)+' 元/万火':'--')+'</div></div>'+
+    '<div class="m-stat"><div class="l">涨跌</div><div class="v '+upClass+'">'+arrow+' '+Math.abs(change).toFixed(2)+' ('+changePct+'%)</div></div>'+
+    '<div class="m-stat"><div class="l">最高</div><div class="v" style="color:var(--fire)">'+(high>0?high.toFixed(2):'--')+'</div></div>'+
+    '<div class="m-stat"><div class="l">最低</div><div class="v" style="color:var(--muted)">'+(low>0?low.toFixed(2):'--')+'</div></div>'+
     '<div class="m-stat"><div class="l">1元=</div><div class="v" style="color:var(--rmb)">'+(firePerRmb>0?firePerRmb.toFixed(2)+'火':'--')+'</div></div>'+
     '<div class="m-stat"><div class="l">数据点</div><div class="v" style="color:var(--muted)">'+history.length+'</div></div>';
   drawFireHistoryChart(history);
@@ -1237,7 +1238,7 @@ function drawFireHistoryChart(history){
           titleColor:'#e2e8f0',
           bodyColor:'#f59e0b',
           padding:10,
-          callbacks:{label:function(ctx){return'元/万火: '+ctx.parsed.y.toFixed(4)}}
+          callbacks:{label:function(ctx){return'元/万火: '+ctx.parsed.y.toFixed(2)}}
         }
       },
       scales:{
@@ -1264,7 +1265,7 @@ init();
         <button class="m-tab" onclick="setHistoryRange(168,this)">7天</button>
         <button class="m-tab" onclick="setHistoryRange(720,this)">30天</button>
       </div>
-      <div id="historyChartWrap"><canvas id="historyChart"></canvas></div>
+      <div id="historyChartWrap" class="m-chart"><canvas id="historyChart"></canvas></div>
       <div id="historyEmpty" class="m-empty" style="display:none">暂无火价历史数据</div>
     </div>
   </div>
